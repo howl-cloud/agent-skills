@@ -1,6 +1,6 @@
 # Hostess Examples
 
-Use these as starter patterns. Adjust service names, paths, ports, secrets, and health checks to match the user's repository.
+Use these as starter patterns. Adjust service names, paths, ports, secrets, and health checks to match the user's repository. More examples and guides are at [docs.hostess.sh](https://docs.hostess.sh).
 
 ## Next.js with Postgres
 

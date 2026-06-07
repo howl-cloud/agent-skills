@@ -1,6 +1,6 @@
 # Hostess Operations
 
-Use this reference for status checks, logs, local connections, backups, restores, jobs, and operational troubleshooting.
+Use this reference for status checks, logs, local connections, backups, restores, jobs, and operational troubleshooting. Full documentation is at [docs.hostess.sh](https://docs.hostess.sh).
 
 ## Deployments
 
@@ -104,7 +104,7 @@ Interactive shell:
 ```bash
 hostess connect shell api
 hostess connect shell api --command /bin/bash
-hostess connect shell api --command /bin/sh
+hostess connect shell api --env staging
 ```
 
 One-off command:

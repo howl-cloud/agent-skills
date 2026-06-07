@@ -1,6 +1,6 @@
 # Hostess Configuration
 
-Use this reference when creating or editing `hostess.yml`.
+Use this reference when creating or editing `hostess.yml`. Full schema documentation is available at [docs.hostess.sh](https://docs.hostess.sh) — the index map is at https://docs.hostess.sh/llms.txt.
 
 ## Minimal shape
 
@@ -30,6 +30,8 @@ Supported service types:
 | `postgres` | Managed PostgreSQL | Port 5432, managed credentials |
 | `redis` | Managed Redis | Port 6379, managed credentials |
 | `custom` | Any other container | Set ports and health explicitly |
+
+`type` is optional but recommended. When omitted, the service behaves as `custom` and all behavior must be configured explicitly.
 
 Non-database services need exactly one of:
 
@@ -62,6 +64,16 @@ env:
 ```
 
 Use literals only for non-sensitive values. Use `${secret:NAME}` for keys, passwords, tokens, signing secrets, and provider credentials.
+
+To load variables from a file, use `env_file`:
+
+```yaml
+env_file:
+  - .env
+  - .env.production
+```
+
+Files are read in order; `env` values take precedence over file values.
 
 ## Magic variables
 
@@ -130,6 +142,14 @@ depends_on:
     condition: healthy
   migrate-db:
     condition: completed
+```
+
+Compact mapping form is also valid:
+
+```yaml
+depends_on:
+  database: healthy
+  migrate-db: completed
 ```
 
 Service dependencies use `healthy`. Job dependencies use `completed`. Avoid dependency cycles and self-references.
@@ -235,7 +255,7 @@ Use `retention` for `postgres`, `redis`, and stateful `custom` services:
 retention: permanent
 ```
 
-`permanent` keeps data across redeploys where supported. `ephemeral` means data can be discarded with the environment.
+`permanent` keeps data across redeploys. `ephemeral` means data can be discarded with the environment. The default is `permanent` for production environments and `ephemeral` for preview environments.
 
 For custom services needing durable files, use `persistence`:
 
@@ -268,14 +288,19 @@ Use `files` for read-only config files or secret-backed files:
 files:
   - name: gateway-config
     mount: /etc/gateway/config.yml
-    source: ./gateway/config.yml
+    source: ./gateway/config.yml       # project-relative file path
+  - name: kong-config
+    mount: /usr/local/kong/kong.yml
+    content: |                         # inline content
+      _format_version: "3.0"
+      services: []
   - name: signing-key
     mount: /etc/gateway/signing.key
-    secret: GATEWAY_SIGNING_KEY
+    secret: GATEWAY_SIGNING_KEY        # Hostess secret key
     mode: "0400"
 ```
 
-Exactly one of `source`, `content`, or `secret` must be set. Mount paths must be absolute file paths.
+Exactly one of `source`, `content`, or `secret` must be set. Mount paths must be absolute file paths. Use `secret` for private keys, certificates, and other sensitive values.
 
 ## Domains
 
@@ -372,5 +397,22 @@ jobs:
     run: cron
     schedule: daily
 ```
+
+Job fields:
+
+| Field | Description |
+|---|---|
+| `build` or `image` | Container source (one required) |
+| `command` | Command to run (required) |
+| `run` | `on_deploy` (default), `once`, `manual`, `cron`, `lifecycle` |
+| `schedule` | Required when `run: cron`. Preset (`daily`, `weekly`, `monthly`) or 5-field cron expression |
+| `env` / `env_file` | Env vars; same semantics as services. Magic variables supported |
+| `files` | File mounts; same syntax as service `files:` |
+| `depends_on` | Service or job names with `healthy` / `completed` conditions |
+| `resources` | Same shape as service resources |
+| `timeout` | Max run time, default `5m` |
+| `retries` | Retry count on failure, default `1` |
+
+The `lifecycle` run mode is used when a service's `lifecycle.*.job:` field references this job by name, letting one job definition be shared across services. Use `on_deploy`, `once`, `manual`, or `cron` for directly scheduled or triggered jobs.
 
 Use jobs for migrations, bootstrap tasks, reports, cleanup tasks, and manual operations that should not be long-running services.
