@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "hostess-plugin",
+  "description": "Agent skills for Hostess — the Docker Compose of production.",
+  "owner": {
+    "name": "Horizon Web Labs",
+    "email": "immanuel@hostess.sh"
+  },
+  "plugins": [
+    {
+      "name": "hostess",
+      "description": "Deploy and operate full-stack applications on Hostess from Claude Code. Write hostess.yml configs, run deploys, manage secrets, stream logs, connect to databases, and set up CI/CD.",
+      "author": {
+        "name": "Horizon Web Labs"
+      },
+      "source": "./plugins/hostess",
+      "category": "deployment",
+      "homepage": "https://docs.hostess.sh/docs/ai-agents"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "hostess-plugin",
+  "owner": {
+    "name": "Horizon Web Labs",
+    "email": "immanuel@hostess.sh"
+  },
+  "metadata": {
+    "description": "Agent skills for Hostess — deploy and operate multi-service applications from Cursor."
+  },
+  "plugins": [
+    {
+      "name": "hostess",
+      "source": "plugins/hostess",
+      "description": "Deploy and operate full-stack applications on Hostess from Cursor. Write hostess.yml configs, run deploys, manage secrets, stream logs, connect to databases, and set up CI/CD."
+    }
+  ]
+}

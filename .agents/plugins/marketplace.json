@@ -1,0 +1,20 @@
+{
+  "name": "hostess-plugin",
+  "interface": {
+    "displayName": "Hostess Plugin"
+  },
+  "plugins": [
+    {
+      "name": "hostess",
+      "source": {
+        "source": "local",
+        "path": "./plugins/hostess"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

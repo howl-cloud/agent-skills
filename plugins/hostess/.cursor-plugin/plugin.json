@@ -1,0 +1,18 @@
+{
+  "name": "hostess",
+  "displayName": "Hostess",
+  "description": "Deploy and operate full-stack applications on Hostess from Cursor. Write hostess.yml configs, run deploys, manage secrets, stream logs, connect to databases, and set up CI/CD — without leaving your editor.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Horizon Web Labs",
+    "email": "immanuel@hostess.sh"
+  },
+  "publisher": "Horizon Web Labs",
+  "homepage": "https://docs.hostess.sh/docs/ai-agents",
+  "repository": "https://github.com/howl-cloud/agent-skills",
+  "license": "MIT",
+  "keywords": ["hostess", "deployment", "hosting", "databases", "agent-skills", "cloud", "docker", "compose"],
+  "category": "Deployment",
+  "tags": ["skills", "hostess", "deployment", "cloud"],
+  "skills": "./skills/"
+}

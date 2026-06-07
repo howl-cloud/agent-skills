@@ -1,0 +1,29 @@
+{
+  "name": "hostess",
+  "version": "1.0.0",
+  "description": "Deploy and operate full-stack applications on Hostess from Codex. Write hostess.yml configs, run deploys, manage secrets, stream logs, connect to databases, and set up CI/CD — without leaving your editor.",
+  "author": {
+    "name": "Horizon Web Labs",
+    "email": "immanuel@hostess.sh",
+    "url": "https://hostess.sh"
+  },
+  "homepage": "https://docs.hostess.sh/docs/ai-agents",
+  "repository": "https://github.com/howl-cloud/agent-skills",
+  "license": "MIT",
+  "keywords": ["hostess", "deployment", "hosting", "databases", "agent-skills", "cloud", "docker", "compose"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Hostess",
+    "shortDescription": "Deploy and operate multi-service apps on Hostess.",
+    "longDescription": "Use Hostess from Codex to write hostess.yml configs, run deploys, manage secrets, check service status, stream logs, connect to databases, and set up CI/CD — all without leaving your editor.",
+    "developerName": "Horizon Web Labs",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://hostess.sh",
+    "defaultPrompt": [
+      "Create a hostess.yml for my app.",
+      "Deploy my app to Hostess.",
+      "Check the status of my Hostess services."
+    ]
+  }
+}
