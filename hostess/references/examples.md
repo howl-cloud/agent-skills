@@ -2,6 +2,30 @@
 
 Use these as starter patterns. Adjust service names, paths, ports, secrets, and health checks to match the user's repository. More examples and guides are at [docs.hostess.sh](https://docs.hostess.sh).
 
+## Zero-config Next.js with Postgres (no Dockerfile)
+
+Use `source:` when there is no Dockerfile. Hostess builds the service automatically using Railpack.
+
+```yaml
+version: "1.0"
+name: my-app
+
+services:
+  web:
+    type: nextjs
+    source: .
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+
+  database:
+    type: postgres
+    resources: small
+```
+
+`source:` requires the BuildKit backend (the default for new projects). It cannot be used in jobs.
+
 ## Next.js with Postgres
 
 ```yaml

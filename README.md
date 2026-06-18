@@ -28,21 +28,41 @@ Deploy and operate applications on Hostess. The skill helps agents write `hostes
 
 ## Installation
 
+### Skill
+
 ```bash
 npx skills add howl-cloud/agent-skills --skill hostess --agent claude-code codex cursor
 ```
 
-Add `-g` to install globally (user-level) instead of into the current project:
+Add `-g` to install the skill globally.
 
-```bash
-npx skills add howl-cloud/agent-skills --skill hostess --agent claude-code codex cursor -g
-```
-
-### All agents
+#### All agents
 
 ```bash
 npx skills add howl-cloud/agent-skills --skill hostess
 ```
+
+### Plugin
+
+<!-- Plugin install snippets
+
+## Claude Code
+
+```
+/plugin marketplace add howl-cloud/agent-skills
+/plugin install hostess@agent-skills
+```
+
+## Codex
+
+`codex plugin marketplace add howl-cloud/agent-skills`
+
+## Cursor
+
+1. Open Settings → Plugins.
+2. Paste https://github.com/howl-cloud/agent-skills in the search field.
+3. Select the Hostess plugin and click Add to Cursor.
+-->
 
 ## Links
 

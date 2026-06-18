@@ -23,13 +23,19 @@ Update:
 hostess update
 ```
 
-Interactive login:
+Interactive login (opens a browser automatically):
 
 ```bash
 hostess login
 ```
 
-For CI/CD, use `HOSTESS_TOKEN` from a Hostess personal access token.
+If the browser does not open or you are in a headless environment, use `--no-browser` to print the login URL instead:
+
+```bash
+hostess login --no-browser
+```
+
+For CI/CD, use `HOSTESS_TOKEN` from a Hostess personal access token — do not run `hostess login` in CI.
 
 ## First deploy decision flow
 
@@ -54,18 +60,18 @@ For CI/CD, use `HOSTESS_TOKEN` from a Hostess personal access token.
 
 Typical mapping:
 
-| Docker Compose | Hostess |
-|---|---|
-| `services.<name>.build.context` | `services.<name>.build.source` |
-| `services.<name>.build.dockerfile` | `services.<name>.build.dockerfile` |
-| `environment` | `env` |
-| `image: postgres:*` | `type: postgres` |
-| `image: redis:*` | `type: redis` |
-| service-to-service hostnames | magic variables like `${database.url}` |
-| named database volumes | `retention: permanent` and database resources |
-| bind-mounted config files | `files.source` |
-| durable custom app data | `persistence` |
-| published ports | `ports`, usually omitted for Next.js/FastAPI defaults |
+| Docker Compose                     | Hostess                                               |
+| ---------------------------------- | ----------------------------------------------------- |
+| `services.<name>.build.context`    | `services.<name>.build.source`                        |
+| `services.<name>.build.dockerfile` | `services.<name>.build.dockerfile`                    |
+| `environment`                      | `env`                                                 |
+| `image: postgres:*`                | `type: postgres`                                      |
+| `image: redis:*`                   | `type: redis`                                         |
+| service-to-service hostnames       | magic variables like `${database.url}`                |
+| named database volumes             | `retention: permanent` and database resources         |
+| bind-mounted config files          | `files.source`                                        |
+| durable custom app data            | `persistence`                                         |
+| published ports                    | `ports`, usually omitted for Next.js/FastAPI defaults |
 
 After `hostess init`, make production choices explicit:
 
@@ -222,6 +228,24 @@ hostess inspect --env production
 hostess ps --env production
 hostess logs api --tail 100 --env production
 ```
+
+## Live build log streaming
+
+During `hostess deploy`, the TUI streams live build phase labels for each service as it builds:
+
+```
+→ Preparing
+→ Pulling base image
+→ Restoring cache
+→ Installing
+→ Building
+→ Pushing image
+✓ built
+```
+
+For `source:` (Railpack) services this includes package install output and build step details. For cached builds the phases flash by quickly.
+
+The same log stream is available in the Studio under **Deployments → [service] → Build Logs**. Build logs are also written to the deployment record for post-deploy inspection.
 
 ## Troubleshooting deploys
 

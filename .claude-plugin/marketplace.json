@@ -15,7 +15,7 @@
       },
       "source": "./plugins/hostess",
       "category": "deployment",
-      "homepage": "https://docs.hostess.sh/docs/ai-agents"
+      "homepage": "https://hostess.sh"
     }
   ]
 }

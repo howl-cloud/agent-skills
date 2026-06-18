@@ -7,10 +7,19 @@
     "email": "immanuel@hostess.sh",
     "url": "https://hostess.sh"
   },
-  "homepage": "https://docs.hostess.sh/docs/ai-agents",
+  "homepage": "https://hostess.sh",
   "repository": "https://github.com/howl-cloud/agent-skills",
   "license": "MIT",
-  "keywords": ["hostess", "deployment", "hosting", "databases", "agent-skills", "cloud", "docker", "compose"],
+  "keywords": [
+    "hostess",
+    "deployment",
+    "hosting",
+    "databases",
+    "agent-skills",
+    "cloud",
+    "docker",
+    "compose"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Hostess",
