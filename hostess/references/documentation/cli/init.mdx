@@ -1,0 +1,176 @@
+---
+title: hostess init
+description: Convert an existing docker-compose.yml file into a hostess.yml configuration.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Convert a `docker-compose.yml` file into a `hostess.yml` configuration. This command reads your Docker Compose file and generates a best-effort equivalent Hostess configuration, detecting service types, wiring magic variables for database connections, and mapping ports, dependencies, and health checks.
+
+This is the fastest way to get started with Hostess if you already have a Docker Compose setup.
+
+## Usage
+
+```bash title="Terminal"
+hostess init [flags]
+```
+
+## Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--file` | `-f` | `string` | Auto-detect | Path to the docker-compose file to convert |
+
+When `--file` is omitted, Hostess checks `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, and `compose.yaml` in the current directory.
+
+## Examples
+
+### Convert the default docker-compose.yml
+
+```bash title="Terminal"
+hostess init
+```
+
+```
+Created hostess.yml from docker-compose.yml (4 services)
+
+Next steps:
+  1. Review hostess.yml and adjust as needed
+  2. Run: hostess deploy
+```
+
+### Convert a specific compose file
+
+```bash title="Terminal"
+hostess init -f compose.prod.yml
+```
+
+### Before and After
+
+Here's an example of what the conversion looks like:
+
+<Callout type="info">
+The conversion is a best-effort translation. You should always review the generated `hostess.yml` and adjust it as needed — especially environment variables, resource settings, and build paths.
+</Callout>
+
+**Before** — `docker-compose.yml`:
+
+```yaml title="docker-compose.yml"
+version: "3.8"
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/myapp
+      - REDIS_URL=redis://cache:6379
+    depends_on:
+      - db
+      - cache
+
+  db:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_PASSWORD=password
+
+  cache:
+    image: redis:7-alpine
+
+volumes:
+  pgdata:
+```
+
+**After** — `hostess.yml`:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-project
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    ports:
+      - 3000
+    env:
+      NEXT_PUBLIC_API_URL: ${backend.external_url}
+    depends_on:
+      - backend
+
+  backend:
+    type: fastapi
+    build:
+      source: ./backend
+    ports:
+      - 8000
+    env:
+      DATABASE_URL: ${db.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - db
+      - cache
+
+  db:
+    type: postgres
+    resources: medium
+
+  cache:
+    type: redis
+    resources: small
+```
+
+Notice how the conversion:
+
+- **Detected service types** from images and build contexts (`nextjs`, `fastapi`, `postgres`, `redis`)
+- **Replaced hardcoded URLs** with magic variables (`${db.url}`, `${cache.url}`, `${backend.external_url}`)
+- **Removed volume declarations** (Hostess manages storage automatically)
+- **Removed passwords** from environment variables (Hostess generates and manages credentials)
+- **Added resource presets** for database services
+
+## What Gets Converted
+
+| Docker Compose Feature | Hostess Equivalent |
+|----------------------|-------------------|
+| `build.context` | `build.source` |
+| `build.dockerfile` | `build.dockerfile` |
+| `image` | `image` |
+| `ports` | `ports` |
+| `environment` | `env` (with magic variable substitution) |
+| `depends_on` | `depends_on` |
+| `healthcheck` | `health` |
+| Postgres/Redis images | `type: postgres` / `type: redis` |
+| `volumes` | Managed automatically (removed) |
+| `networks` | Managed automatically (removed) |
+
+## Review Checklist
+
+After conversion, review the generated `hostess.yml` for production-specific choices:
+
+- **Health checks** — Keep checks simple and aligned with the service's production startup behavior.
+- **Service types** — Services that do not match built-in types are converted as `type: custom`.
+- **Build args** — Move sensitive values to runtime secrets and keep true build-time values literal.
+- **Local mounts** — Replace local development mounts with production storage or file configuration where needed.
+
+<Callout type="warn">
+The `hostess init` command will refuse to run if a `hostess.yml` already exists in the current directory. Delete or rename the existing file first if you want to regenerate.
+</Callout>

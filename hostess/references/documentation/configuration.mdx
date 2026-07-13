@@ -1,0 +1,1473 @@
+---
+title: Configuration Reference
+description: Complete reference for the hostess.yml configuration file — services, environments, resources, lifecycle hooks, and more.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+The `hostess.yml` file is the single source of truth for your application. It defines what services run, how they connect, where they deploy, and how they scale. One file describes your entire stack.
+
+## Design Principles
+
+Hostess configuration follows four principles:
+
+- **Declarative** — You describe the desired state of your stack, not the steps to achieve it. Hostess figures out the "how".
+- **Minimal** — Only specify what matters. Smart defaults handle everything else. A simple app needs only a few lines.
+- **Portable** — Your configuration is not tied to any specific cloud provider, orchestrator, or hosting platform.
+- **Readable** — Non-engineers should be able to read your `hostess.yml` and understand the basics of your stack.
+
+## Top-Level Fields
+
+Every `hostess.yml` file starts with these top-level fields:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-app
+description: A description of my application
+environments:
+  production:
+    domains:
+      web: [my-app.example.com]
+services:
+  # ... your services
+jobs:
+  # ... one-off, scheduled, or manual jobs
+```
+
+### Field Reference
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `version` | string | **Yes** | Schema version. Use `1.0`. |
+| `name` | string | No | Project name, displayed in Studio and used for URL generation. |
+| `description` | string | No | Human-readable project description. |
+| `environments` | object | No | Per-environment custom domain mappings. |
+| `services` | object | **Yes** | Service definitions. This is the core of your configuration. |
+| `jobs` | object | No | Top-level finite workloads that run on deploy, once, manually, or on a schedule. |
+
+Only `version` and `services` are required. Everything else has sensible defaults.
+
+---
+
+## Services
+
+Services are the core of your `hostess.yml` file. Each service defines a component of your application — a web frontend, an API backend, a database, a cache, a worker process, or any containerized application.
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+  backend:
+    type: fastapi
+    build:
+      source: ./backend
+  database:
+    type: postgres
+    resources: large
+```
+
+Each service is keyed by a **name** (the YAML key under `services:`). Names must be **at least 2** and **at most 63** characters, use lowercase letters, digits, and hyphens only, start with a letter, and end with a letter or number.
+
+### Full ServiceSpec Reference
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | string | **Yes** | Service type (see [Service Types](#service-types)). One of `nextjs`, `fastapi`, `postgres`, `redis`, or `custom`. |
+| `build` | object | Conditional | Build from a Dockerfile. One of `build`, `image`, or `source` is required for non-database services. |
+| `image` | string | Conditional | Public container image URL (pullable without registry credentials). For private images, prefer building from your source instead. |
+| `source` | string | Conditional | Zero-config build path — no Dockerfile. Hostess auto-detects your language/framework and builds it. Mutually exclusive with `build` and `image`. |
+| `entrypoint` | string or array | No | Override the image entrypoint. |
+| `command` | string or array | No | Override the image command/CMD. Array form is recommended; each entry is one argv segment. |
+| `env` | object | No | Environment variables (literals, magic variables, secret references). |
+| `files` | array | No | Read-only file mounts from local files, inline content, or Hostess secrets. |
+| `depends_on` | array or object | No | Services or top-level jobs this service depends on. |
+| `domains` | array | No | Custom domains (production shorthand). |
+| `ports` | array | No | Ports to expose. Defaults depend on service type. |
+| `resources` | string or object | No | Resource allocation. Defaults to `medium`. |
+| `replicas` | number or object | No | Replica count or autoscaling config. Defaults to `1`. |
+| `health` | object | No | Health check configuration. Defaults depend on service type. |
+| `retention` | string | No | Data retention policy: `permanent` or `ephemeral`. For `postgres`, `redis`, and stateful `custom` services. |
+| `persistence` | bool, object, or array | No | Durable custom-service mounts. Custom services only. |
+| `lifecycle` | object | No | Lifecycle hooks (init, migrate, post_deploy, shutdown). |
+| `insights` | bool or object | No | Toggle traffic, latency, and trace collection for the service. Defaults to enabled. |
+| `logs` | string | No | How Hostess parses the service's logs: `structured` or `plain`. |
+| `backups` | string or object | No | Backup schedule and configuration. |
+| `databases` | string or object | No | Scoped database groups. Postgres and Redis only. |
+
+---
+
+### Service Types
+
+The `type` field tells Hostess what kind of service you are running. This enables smart defaults for ports, health checks, resource allocation, and more.
+
+```yaml
+type: nextjs | fastapi | postgres | redis | custom
+```
+
+#### Supported Types
+
+| Type | Category | Default Port | Default Health Check | Description |
+|---|---|---|---|---|
+| `nextjs` | Web Framework | `3000` | `GET /` | Next.js (React) applications |
+| `fastapi` | Web Framework | `8000` | `GET /health` | FastAPI (Python) applications |
+| `postgres` | Database | `5432` | `pg_isready` | Managed PostgreSQL database |
+| `redis` | Database | `6379` | `redis-cli ping` | Managed Redis instance |
+| `custom` | Generic | None | None | Any containerized application |
+
+<Callout type="info">
+The `type` field is **required**. Hostess applies sensible defaults per type so you configure less. For `custom`, you must explicitly configure ports, health checks, and other settings.
+</Callout>
+
+**Web framework types** (`nextjs`, `fastapi`) require one of `build`, `image`, or `source` to be specified. They produce container deployments that receive HTTP traffic.
+
+**Database types** (`postgres`, `redis`) are fully managed by Hostess. You do not need to provide `build` or `image` — Hostess provisions the database automatically. Database services support `resources`, `retention`, `backups`, and `databases` (scoped databases) fields.
+
+---
+
+### Build Configuration
+
+Every non-database service needs to tell Hostess where its code is. You have three options:
+
+- **`source`** — zero-config. Point at a directory and Hostess builds it for you, no Dockerfile required (the simplest path).
+- **`build`** — build from your own Dockerfile, when you need full control.
+- **`image`** — use a pre-built, public container image.
+
+<Callout type="warn">
+Choose exactly one of `source`, `build`, or `image` for each non-database service. Database services (`postgres`, `redis`) are fully managed and need no build configuration.
+</Callout>
+
+<Tabs items={["Zero-Config", "Build from Source", "Pre-built Image"]}>
+<Tab value="Zero-Config">
+
+Use `source` when you just want Hostess to build and run your app **without writing a Dockerfile**. Point it at your code and Hostess auto-detects the language and framework — Node, Python, Go, Ruby, and more — and produces an optimized image for you (powered by [Railpack](https://railpack.com)).
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    source: ./backend
+```
+
+That's the whole build config. Hostess inspects the directory, installs dependencies, and builds and starts your app.
+
+#### When to use `source`
+
+- You don't have (or don't want to maintain) a Dockerfile.
+- Your app uses a mainstream stack that Railpack recognizes.
+- You want the shortest path from code to deployment.
+
+<Callout type="info">
+`source` ignores any Dockerfile in the directory — it always builds with auto-detection. If you have a Dockerfile you want Hostess to use, choose **`build`** instead. Reach for `build` whenever you need control auto-detection can't give you (a specific base image, system packages, multi-stage builds, etc.).
+</Callout>
+
+**Examples:**
+
+```yaml title="Whole repo"
+source: .
+```
+
+```yaml title="Monorepo service"
+source: ./services/worker
+```
+
+</Tab>
+<Tab value="Build from Source">
+
+Use `build` when you want Hostess to build a container image from your own Dockerfile:
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    build:
+      source: ./backend
+      dockerfile: Dockerfile.prod
+      args:
+        NODE_ENV: production
+        BUILD_VERSION: "1.2.3"
+```
+
+#### BuildSpec Fields
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `source` | string | **Yes** | - | Build context path, relative to the `hostess.yml` file. |
+| `dockerfile` | string | No | `Dockerfile` | Dockerfile path, relative to the source directory. |
+| `args` | object | No | - | Build arguments passed to Docker during the build. |
+
+The `source` path determines which files are sent to the build system. It is also the root for the Dockerfile lookup.
+
+**Examples:**
+
+```yaml title="Simple build"
+build:
+  source: .
+```
+
+```yaml title="Monorepo service"
+build:
+  source: ./services/auth
+```
+
+```yaml title="Custom Dockerfile with build args"
+build:
+  source: ./backend
+  dockerfile: Dockerfile.prod
+  args:
+    PYTHON_VERSION: "3.12"
+```
+
+</Tab>
+<Tab value="Pre-built Image">
+
+Use `image` when you have a pre-built container image that Hostess can pull **without registry credentials** — for example a **public** image on Docker Hub or another registry.
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: custom
+    image: ghcr.io/myorg/backend:v1.2.3
+```
+
+The value must be a fully qualified reference (registry, repository, and tag).
+
+<Callout type="warn">
+`image` is for **public** images only. For private images, use **`build`** from source so the platform builds and deploys from your repo instead.
+</Callout>
+
+**Examples:**
+
+```yaml title="Docker Hub image"
+image: nginx:1.25
+```
+
+```yaml title="GitHub Container Registry"
+image: ghcr.io/myorg/my-service:latest
+```
+
+```yaml title="Custom registry"
+image: registry.example.com/team/service:v2.0.0
+```
+
+</Tab>
+</Tabs>
+
+---
+
+### Environment Variables
+
+The `env` field defines environment variables for your service. Hostess supports three types of values:
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    env:
+      # Literal values
+      LOG_LEVEL: info
+      NODE_ENV: production
+
+      # Magic variables — automatic service discovery
+      DATABASE_URL: ${database.url}
+      CACHE_URL: ${cache.url}
+      FRONTEND_URL: ${frontend.external_url}
+
+      # Secret references — values from the Hostess secret store
+      JWT_SECRET: ${secret:JWT_SECRET}
+      STRIPE_KEY: ${secret:STRIPE_API_KEY}
+```
+
+#### Value Types
+
+| Type | Syntax | Description |
+|---|---|---|
+| Literal | `KEY: value` | Plain string value, injected as-is. |
+| Magic variable | `KEY: ${service.field}` | Resolved at deploy time to the referenced service's URL, host, port, etc. See [Magic Variables](https://docs.hostess.sh/docs/magic-variables). |
+| Secret reference | `KEY: ${secret:NAME}` | Fetched from the Hostess secret store. Missing secrets cause deployment failure. |
+
+---
+
+### Dependencies
+
+The `depends_on` field declares that your service depends on other services. Hostess uses it for **deployment ordering** and to **wait** before starting a dependent service’s runtime instances.
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    depends_on:
+      - database
+      - cache
+    env:
+      DATABASE_URL: ${database.url}
+      CACHE_URL: ${cache.url}
+
+  database:
+    type: postgres
+
+  cache:
+    type: redis
+```
+
+Use object form when you need to make the dependency condition explicit or depend on a top-level job:
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    depends_on:
+      database:
+        condition: healthy
+      migrate-db:
+        condition: completed
+
+jobs:
+  migrate-db:
+    image: ghcr.io/acme/api:latest
+    command: ["alembic", "upgrade", "head"]
+    run: on_deploy
+```
+
+#### Behavior
+
+- **Startup order** — Dependent services are rolled out after their dependencies in the graph.
+- **Waiting** — For **HTTP** services (for example `nextjs` / `fastapi` / `custom` with an HTTP health check), Hostess waits until the configured HTTP health path responds. For **Postgres** and **Redis**, it waits until the dependency **accepts connections** on the database port.
+- **Job gates** — A service can depend on a top-level job with `condition: completed`, so migrations or setup jobs finish before the service starts.
+- **Magic variables** — Values like `${database.url}` are resolved from the stack configuration; list dependencies in `depends_on` when you need strict ordering relative to those services.
+- **Deployment order** — Dependencies must form a **directed acyclic graph** (no cycles).
+
+#### Validation
+
+- **No circular dependencies** — If service A depends on B and B depends on A, validation fails.
+- **References must exist** — Every target listed in `depends_on` must be defined in `services` or `jobs`.
+- **No self-references** — A service cannot depend on itself.
+- **Typed conditions** — `healthy` is valid for service targets; `completed` is valid for job targets.
+- **Gating jobs only** — Services can depend on jobs that complete automatically as part of a deploy; `manual` and `cron` jobs run outside the deploy flow.
+
+<Callout type="info">
+You do not need to add database services to `depends_on` only because you reference their magic variables. Add them when you want dependent services to wait on database connectivity during rollout.
+</Callout>
+
+---
+
+### File Mounts
+
+Use `files` when a service image expects a read-only config file, certificate, policy, or key at a specific path.
+
+```yaml title="hostess.yml"
+services:
+  gateway:
+    type: custom
+    image: ghcr.io/acme/gateway:1.0.0
+    files:
+      - name: gateway-config
+        mount: /etc/gateway/config.yml
+        source: ./gateway/config.yml
+      - name: signing-key
+        mount: /etc/gateway/signing.key
+        secret: GATEWAY_SIGNING_KEY
+        mode: "0400"
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | **Yes** | Stable file identifier, unique within the service. |
+| `mount` | **Yes** | Absolute file path inside the container. |
+| `source` | Conditional | Project-relative source file. |
+| `content` | Conditional | Inline non-secret file content. |
+| `secret` | Conditional | Hostess secret value mounted as a file. |
+| `mode` | No | Quoted octal mode such as `"0444"` or `"0400"`. Defaults to `"0444"`. |
+
+Exactly one of `source`, `content`, or `secret` must be set. File mounts are single files, not directories, and are read-only at runtime.
+
+<Callout type="warn">
+Use `files` for application services and custom services.
+</Callout>
+
+---
+
+### Domains
+
+Custom domains give your services memorable, branded URLs instead of the auto-generated `*.hostess.run` addresses.
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    domains:
+      - myapp.com
+      - www.myapp.com
+  api:
+    type: fastapi
+    domains:
+      - api.myapp.com
+```
+
+<Callout type="info">
+Service-level `domains` is **shorthand for production only**. For per-environment domains (e.g., staging), use the `environments` section. See [Environments](#environments) below.
+</Callout>
+
+#### Behavior
+
+- **Automatic HTTPS** — Hostess automatically provisions TLS certificates via Let's Encrypt for all custom domains.
+- **Auto-generated URLs always exist** — Every service gets a `*.hostess.run` URL regardless of custom domains.
+- **Web-facing services** — Attach custom domains to services that serve HTTP traffic (your apps and APIs).
+- **DNS setup required** — You need to create a CNAME record pointing your domain to the Hostess routing endpoint:
+
+```
+CNAME myapp.com → ingress.hostess.run
+```
+
+#### Validation Rules
+
+- Must be valid RFC 1123 hostnames — exact, lowercase names like `myapp.com` or `api.myapp.com`
+- Maximum 253 characters
+- Globally unique — a domain cannot appear in multiple services or environments
+- No duplicates within a single service
+
+---
+
+### Ports
+
+The `ports` field specifies which ports your service exposes. Most of the time you do not need to set this — the service type provides a sensible default.
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    ports: [8000]
+```
+
+#### Default Ports by Type
+
+| Service Type | Default Port |
+|---|---|
+| `nextjs` | `3000` |
+| `fastapi` | `8000` |
+| `custom` | None (must be specified) |
+
+#### When to Override
+
+You need to set `ports` when:
+
+- Your application listens on a non-default port
+- You expose multiple ports (e.g., an application port and a metrics port)
+- You are using the `custom` service type
+
+#### Multi-Port Services
+
+Some services expose multiple ports. List them all:
+
+```yaml title="hostess.yml"
+services:
+  minio:
+    type: custom
+    image: minio/minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports: [9000, 9001]
+```
+
+Each port gets its own external URL:
+
+```
+Port 1 (9000): https://my-app-minio-p4k8n7v2.hostess.run
+Port 2 (9001): https://my-app-minio-p4k8n7v2-2.hostess.run
+```
+
+You can reference individual ports using magic variables: `${minio.port_1.url}`, `${minio.port_2.url}`, `${minio.port_2.external_url}`, etc.
+
+---
+
+### Resources
+
+The `resources` field controls how much CPU, memory, and storage your service gets. Hostess offers convenient presets and also supports explicit values.
+
+<Tabs items={["Preset (Recommended)", "Preset + Custom Storage", "Explicit"]}>
+<Tab value="Preset (Recommended)">
+
+The simplest way to set resources is with a preset name:
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    resources: medium
+```
+
+#### Preset Reference
+
+| Preset | CPU | Memory | Storage (databases only) | Typical Use Case |
+|---|---|---|---|---|
+| `small` | 0.5 cores | 512Mi | 10Gi | Development, small apps |
+| `medium` | 1.0 cores | 1Gi | 20Gi | Production APIs, standard workloads |
+| `large` | 2.0 cores | 2Gi | 50Gi | High-traffic services |
+| `xlarge` | 4.0 cores | 4Gi | 100Gi | Large databases, ML workloads |
+
+If you do not specify `resources`, it defaults to `medium`.
+
+</Tab>
+<Tab value="Preset + Custom Storage">
+
+For database services, you can use a preset for CPU and memory but override the storage:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 200Gi
+```
+
+This gives you the `large` preset's CPU (2.0 cores) and memory (2Gi) with 200Gi of storage instead of the default 50Gi.
+
+</Tab>
+<Tab value="Explicit">
+
+For full control, specify CPU, memory, and (for databases) storage individually:
+
+```yaml title="hostess.yml"
+services:
+  ml-inference:
+    type: custom
+    resources:
+      cpu: 4.0
+      memory: 16Gi
+
+  database:
+    type: postgres
+    resources:
+      cpu: 2.0
+      memory: 4Gi
+      storage: 100Gi
+```
+
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+The `storage` resource field only applies to database services (`postgres`, `redis`). Including `storage` on other service types (including `custom`) is a **validation error**.
+</Callout>
+
+---
+
+### Replicas and Autoscaling
+
+The `replicas` field controls how many instances of your service run. You can set a fixed number or configure horizontal autoscaling.
+
+<Tabs items={["Fixed Replicas", "Autoscaling"]}>
+<Tab value="Fixed Replicas">
+
+Set a fixed number of replicas:
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    replicas: 3
+```
+
+With fixed replicas, Hostess always runs exactly the specified number of instances. Autoscaling is disabled.
+
+</Tab>
+<Tab value="Autoscaling">
+
+Configure autoscaling with minimum and maximum bounds:
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    replicas:
+      min: 2
+      max: 10
+      target_cpu: 70
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `min` | number | - | Minimum number of replicas. Always running. |
+| `max` | number | - | Maximum number of replicas. Upper scaling bound. |
+| `target_cpu` | number | `70` | Target CPU utilization percentage. When average CPU usage exceeds this, Hostess scales up. |
+
+Hostess manages stabilization windows and cooldown periods internally to prevent thrashing.
+
+</Tab>
+</Tabs>
+
+<Callout type="info">
+If you do not specify `replicas`, it defaults to `1`. Autoscaling in v1.0 is based on CPU utilization only.
+</Callout>
+
+#### Validation
+
+- Fixed replica count and autoscaling `min` must be at least **1**.
+- Autoscaling `max` must be greater than or equal to `min`.
+
+---
+
+### Health Checks
+
+Health checks tell Hostess how to determine if your service is running correctly. Hostess uses them to decide when a replica is ready to receive traffic, to restart replicas that stop responding, and to gate safe rollouts.
+
+<Tabs items={["HTTP Health Check", "Command Health Check"]}>
+<Tab value="HTTP Health Check">
+
+The most common health check — Hostess sends an HTTP GET request to the specified path:
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    health:
+      http: /api/healthz
+      interval: 10s
+      timeout: 2s
+      retries: 5
+```
+
+</Tab>
+<Tab value="Command Health Check">
+
+For services without an HTTP endpoint, use a command-based health check:
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    health:
+      command: "pgrep -f worker_process"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+```
+
+</Tab>
+</Tabs>
+
+#### Health Check Fields
+
+When you **omit** the entire `health` block, Hostess uses the **built‑in defaults** for your service type (see below). Those defaults use a **30s** check interval.
+
+When you **set** a `health` block, you can tune the check with `interval`, `timeout`, and `retries`. If you omit `interval` in your `health` block, the check runs on a **10s** interval (other fields still default as in the table).
+
+| Field | Type | Default (when `health` is set) | Description |
+|---|---|---|---|
+| `http` | string | - | HTTP path for health checks (e.g., `/health`). |
+| `command` | string | - | Shell command to run inside the container. Exit code 0 means healthy. |
+| `interval` | string | `10s` | How often to run the check (only when you provide a `health` block). |
+| `timeout` | string | `5s` | Maximum time to wait for a response or command. |
+| `retries` | number | `3` | Consecutive failures before marking unhealthy. |
+
+#### Default Health Checks by Type
+
+If you do **not** define `health`, each service type gets a built‑in check with a **30s** interval:
+
+| Service Type | Default Health Check |
+|---|---|
+| `nextjs` | `GET /` |
+| `fastapi` | `GET /health` |
+| `postgres` | `pg_isready` command |
+| `redis` | `redis-cli ping` command |
+| `custom` | None (configure `health` yourself) |
+
+You only need to set `health` if you want to override the default or if you are using the `custom` type.
+
+---
+
+### Lifecycle Hooks
+
+Lifecycle hooks let you run custom commands at specific points in your service's lifecycle — before startup, during deployment, after deployment, and during shutdown.
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    lifecycle:
+      init:
+        command: ["python", "manage.py", "collectstatic", "--noinput"]
+
+      migrate:
+        command: ["alembic", "upgrade", "head"]
+        timeout: 10m
+
+      post_deploy:
+        command: ["python", "scripts/warmup_cache.py"]
+
+      shutdown:
+        timeout: 30s
+        command: ["python", "scripts/cleanup.py"]
+```
+
+#### Hook Reference
+
+| Hook | Fields | Behavior |
+|---|---|---|
+| `init` | `command` | Runs setup work before the main service starts. |
+| `migrate` | `command`, `timeout` | Runs a one-off deployment task using the service image and migration command. |
+| `post_deploy` | `command`, `timeout` | Runs a one-off release task after deploy, useful for cache warmups and similar work. |
+| `shutdown` | `command`, `timeout` | Adds a pre-stop command and termination grace period for graceful shutdown. |
+
+Commands should be YAML arrays, with each item representing one argv segment. `migrate.timeout` and `post_deploy.timeout` default to `5m` when omitted.
+
+---
+
+### Retention and Persistence
+
+The `retention` field controls whether data for **`postgres`**, **`redis`**, and stateful **`custom`** workloads should **persist across redeploys** or can be **discarded** with the environment.
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    retention: permanent
+```
+
+| Value | Description |
+|---|---|
+| `permanent` | Keep data across redeploys and reprovisions where supported. Use when the data must survive new deploys. |
+| `ephemeral` | Data can be discarded when the deployment or environment is torn down. |
+
+Set `retention` explicitly for each service that supports it — the `retention` field decides whether data persists, regardless of the environment name.
+
+<Callout type="info">
+Use `retention` with `postgres`, `redis`, and `custom` services where storage applies.
+</Callout>
+
+For custom services, `retention: permanent` is shorthand for one durable mount at `/data`, sized from the service resource preset. Use `persistence` when the image needs a different mount path, a specific size, ownership initialization, or multiple durable directories.
+
+<Tabs items={["Default Mount", "Single Mount", "Multiple Mounts"]}>
+<Tab value="Default Mount">
+
+```yaml title="hostess.yml"
+services:
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data"]
+    ports: [9000]
+    retention: permanent
+```
+
+</Tab>
+<Tab value="Single Mount">
+
+```yaml title="hostess.yml"
+services:
+  n8n:
+    type: custom
+    image: docker.n8n.io/n8nio/n8n:stable
+    ports: [5678]
+    persistence:
+      mount: /home/node/.n8n
+      size: 10Gi
+      owner: "1000:1000"
+```
+
+</Tab>
+<Tab value="Multiple Mounts">
+
+```yaml title="hostess.yml"
+services:
+  cms:
+    type: custom
+    image: ghcr.io/acme/cms:latest
+    ports: [8080]
+    persistence:
+      - name: data
+        mount: /var/lib/cms
+        size: 20Gi
+      - name: uploads
+        mount: /app/uploads
+        size: 100Gi
+        owner: "1000:1000"
+```
+
+</Tab>
+</Tabs>
+
+#### Persistence Fields
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | List form only | Stable mount identifier. Single-object form defaults to `data`. |
+| `mount` | **Yes** | Absolute directory path inside the container. |
+| `size` | No | Storage size such as `10Gi`. Defaults to the resource preset storage size. |
+| `owner` | No | Ownership initializer, such as `"1000:1000"` or `"node:node"`. Numeric values are more portable across images. |
+
+Validation rejects persistence on non-custom services, `retention: ephemeral` combined with explicit persistence, duplicate mount paths, unsafe paths, and `files` mounted inside persistent directories.
+
+---
+
+### Insights
+
+The `insights` field controls whether Hostess collects traffic, latency, error-rate, and trace data for the service. **Insights are on by default** — this field exists only to turn collection off. You never have to configure anything to get insights.
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    insights: disabled        # shorthand: turn off all insights for this service
+```
+
+Use the object form for finer control:
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: nextjs
+    insights:
+      server: disabled        # no server-side metrics or traces collected
+      browser: disabled       # no browser analytics collected
+```
+
+#### Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `server` | enum | `enabled` | `enabled` or `disabled`. When disabled, Hostess collects no server-side traffic, latency, or trace data for the workload. |
+| `browser` | enum | `enabled` | `enabled` or `disabled`. Gates browser-side analytics collection. |
+
+The scalar shorthand `insights: disabled` disables both `server` and `browser`. `insights: enabled` and an absent block are equivalent.
+
+<Callout type="info">
+See [Insights](https://docs.hostess.sh/docs/insights) for the full picture: what shows up in Studio out of the box, and how to unlock route-level data with one line of code.
+</Callout>
+
+---
+
+### Logs
+
+The `logs` field tells Hostess how to parse your service's log output.
+
+```yaml title="hostess.yml"
+services:
+  backend:
+    type: fastapi
+    logs: structured        # parse stdout/stderr as structured JSON
+```
+
+| Value | Description |
+|---|---|
+| `structured` | Logs are emitted as structured JSON and parsed field-by-field. |
+| `plain` | Logs are treated as plain text lines. |
+
+---
+
+### Backups
+
+The `backups` field configures automatic backups for database and custom services.
+
+<Tabs items={["Shorthand", "Full Form", "Custom Service"]}>
+<Tab value="Shorthand">
+
+For `postgres` and `redis` services, use the shorthand form with a schedule preset:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    backups: daily
+```
+
+Available schedule presets: `daily`, `weekly`, `biweekly`, `monthly`.
+
+</Tab>
+<Tab value="Full Form">
+
+For more control over schedule and retention:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    backups:
+      schedule: daily
+      retention: 14
+```
+
+You can also use a cron expression for custom schedules:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    backups:
+      schedule: "0 3 * * *"   # Every day at 3 AM
+      retention: 30
+```
+
+</Tab>
+<Tab value="Custom Service">
+
+For `custom` services, you must provide the backup and optionally the restore commands:
+
+```yaml title="hostess.yml"
+services:
+  my-mongo:
+    type: custom
+    image: mongo:7
+    backups:
+      schedule: daily
+      retention: 7
+      command: ["mongodump", "--archive=/backup/dump.gz", "--gzip"]
+      restore_command: ["mongorestore", "--drop", "--archive=/backup/dump.gz", "--gzip"]
+```
+
+Custom backup commands must write output to the `/backup/` directory.
+
+</Tab>
+</Tabs>
+
+#### Backup Fields
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `schedule` | string | **Yes** | - | `daily`, `weekly`, `biweekly`, `monthly`, or a 5-field cron expression. |
+| `retention` | number | No | `7` | Number of backups to keep. Must be between 1 and 365. |
+| `command` | array | Custom only | - | Backup command for `custom` services. Must write to `/backup/`. |
+| `restore_command` | array | No | - | Restore command for `custom` services. If omitted, automated restore is disabled. |
+
+#### Validation
+
+- `backups` is allowed on `postgres`, `redis`, and `custom` services only
+- `command` is required for `custom` services and not allowed for `postgres` / `redis`
+- `restore_command` applies to `custom` services only
+- `retention` must be between 1 and 365
+- Custom cron expressions must have exactly 5 fields
+
+---
+
+### Scoped Databases
+
+By default, all services that reference a database share the same database instance and keyspace. The `databases` field lets you scope databases so different groups of services get isolated databases.
+
+This is useful when you have multiple logical domains (e.g., an auth service and an analytics service) that should not share a database.
+
+<Tabs items={["Explicit Map", "Per-Service Sugar", "Default (Shared)"]}>
+<Tab value="Explicit Map">
+
+Define named groups that map to lists of consuming services:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      DATABASE_URL: ${postgres.url}
+
+  analytics:
+    type: custom
+    env:
+      DATABASE_URL: ${postgres.url}
+
+  postgres:
+    type: postgres
+    databases:
+      main: [api]
+      analytics: [analytics]
+```
+
+In this setup, `api` gets its own database and `analytics` gets a separate one, even though both connect to the same Postgres instance.
+
+</Tab>
+<Tab value="Per-Service Sugar">
+
+If you want every consuming service to get its own database, use the shorthand:
+
+```yaml title="hostess.yml"
+services:
+  postgres:
+    type: postgres
+    databases: per_service
+```
+
+This automatically creates one database group per service that references `${postgres.url}`.
+
+</Tab>
+<Tab value="Default (Shared)">
+
+When you do not specify `databases`, all services share a single database:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      DATABASE_URL: ${postgres.url}
+
+  worker:
+    type: custom
+    env:
+      DATABASE_URL: ${postgres.url}
+
+  postgres:
+    type: postgres
+    # No "databases" field — api and worker share the same database
+```
+
+</Tab>
+</Tabs>
+
+#### Scoped Databases for Redis
+
+Redis scoping works the same way, but uses numbered Redis databases (0-15):
+
+```yaml title="hostess.yml"
+services:
+  redis:
+    type: redis
+    databases:
+      cache: [api, frontend]
+      sessions: [auth-service]
+      queues: [worker]
+```
+
+<Callout type="warn">
+Redis supports a maximum of **16 database groups** (numbered 0 through 15). If you define more than 16 groups, validation will fail.
+</Callout>
+
+#### Validation
+
+- `databases` is only allowed on `postgres` and `redis` services
+- Group names must be DNS-safe
+- A service that references `${<database>.url}` must belong to exactly one group
+- A service cannot appear in multiple groups for the same database
+- Redis has a maximum of 16 groups
+
+---
+
+## Jobs
+
+Top-level `jobs` are finite workloads declared outside `services`. Use them for migrations, setup tasks, asset builds, scheduled reports, maintenance tasks, or manual operations that should not run as long-lived services.
+
+```yaml title="hostess.yml"
+jobs:
+  setup:
+    image: ghcr.io/acme/setup:latest
+    command: ["./setup.sh"]
+    run: once
+
+  daily-report:
+    build:
+      source: ./reports
+    command: ["python", "-m", "reports.daily"]
+    run: cron
+    schedule: daily
+
+  rebuild-search:
+    image: ghcr.io/acme/search-tools:latest
+    command: ["./rebuild.sh"]
+    run: manual
+```
+
+### JobSpec Reference
+
+| Field | Required | Description |
+|---|---|---|
+| `image` or `build` | **Yes** | Container image source. Exactly one is required. |
+| `entrypoint` | No | Override the image entrypoint. |
+| `command` | **Yes** | Command/CMD arguments to run. |
+| `env` | No | Literals, magic variables, and secret references. |
+| `files` | No | Read-only file mounts. |
+| `depends_on` | No | Services or jobs that must be healthy/completed first. |
+| `resources` | No | Same shape as service resources. Defaults to `medium`. |
+| `run` | No | `on_deploy`, `once`, `manual`, or `cron`. Defaults to `on_deploy`. |
+| `schedule` | Required for `cron` | `daily`, `weekly`, `monthly`, or a 5-field cron expression. |
+| `timeout` | No | Defaults to `5m`. |
+| `retries` | No | Defaults to `1`. |
+
+### Run Policies
+
+| Policy | Behavior |
+|---|---|
+| `on_deploy` | Runs every deploy. |
+| `once` | Runs the first deploy that includes the spec, then only when the spec changes or the run is reset. |
+| `manual` | Runs only when triggered from the CLI or Studio. |
+| `cron` | Runs on `schedule`. |
+
+Operate jobs with [`hostess jobs`](https://docs.hostess.sh/docs/cli/jobs).
+
+---
+
+## Environments
+
+Environments represent different deployment targets such as production, staging, preview, or a custom stage. In `hostess.yml`, per-environment configuration is expressed with `environments.<env>.domains`.
+
+```yaml title="hostess.yml"
+environments:
+  production:
+    domains:
+      frontend: [myapp.com, www.myapp.com]
+      api: [api.myapp.com]
+
+  staging:
+    domains:
+      frontend: [staging.myapp.com]
+      api: [api-staging.myapp.com]
+```
+
+### Environment Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `domains` | object | Custom domains per service for this environment. |
+
+### Staging
+
+Staging environments are long-lived environments for pre-production testing:
+
+```yaml title="hostess.yml"
+environments:
+  staging:
+    domains:
+      frontend: [staging.myapp.com]
+```
+
+### Custom Environments
+
+You can define any custom environment name:
+
+```yaml title="hostess.yml"
+environments:
+  qa:
+    domains:
+      frontend: [qa.myapp.com]
+  demo:
+    domains:
+      frontend: [demo.myapp.com]
+```
+
+### Per-Environment Domains
+
+Custom domains can be configured at two levels:
+
+1. **Service-level `domains`** — Shorthand for production:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    domains: [myapp.com]   # Applies to production only
+```
+
+2. **Environment-level `domains`** — Explicit per-environment:
+
+```yaml title="hostess.yml"
+environments:
+  production:
+    domains:
+      frontend: [myapp.com, www.myapp.com]
+      api: [api.myapp.com]
+  staging:
+    domains:
+      frontend: [staging.myapp.com]
+```
+
+#### Domain Rules
+
+- Environment-level domains override service-level domains for that environment
+- Service-level `domains` only applies to the production environment
+- A domain cannot appear in multiple environments (must be globally unique)
+- Service-level and environment-level domains for the same service cannot conflict
+
+---
+
+## Complete Examples
+
+### Minimal Example
+
+The simplest possible `hostess.yml` — a single Next.js app:
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  app:
+    type: nextjs
+    build:
+      source: .
+    domains:
+      - myapp.com
+```
+
+### Full-Stack Application
+
+A complete e-commerce platform with frontend, backend, database, cache, and background workers:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: E-Commerce Platform
+description: Next.js frontend with FastAPI backend
+
+environments:
+  production:
+    domains:
+      frontend: [myorg.com, www.myorg.com]
+      backend: [api.myorg.com]
+
+services:
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 20Gi
+    retention: permanent
+
+  cache:
+    type: redis
+    resources: medium
+    retention: permanent
+
+  backend:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+      STRIPE_KEY: ${secret:STRIPE_KEY}
+    depends_on:
+      - database
+      - cache
+    replicas:
+      min: 2
+      max: 10
+      target_cpu: 70
+    resources: medium
+    lifecycle:
+      migrate:
+        command: ["alembic", "upgrade", "head"]
+    domains:
+      - api.myorg.com
+
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      NEXT_PUBLIC_API_URL: ${backend.external_url}
+    depends_on:
+      - backend
+    replicas:
+      min: 2
+      max: 20
+    resources: medium
+    domains:
+      - myorg.com
+      - www.myorg.com
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker", "--loglevel=info"]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+    replicas: 3
+    resources: medium
+```
+
+### Microservices Architecture
+
+Multiple independent services sharing infrastructure:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: Microservices Platform
+
+services:
+  postgres:
+    type: postgres
+
+  redis:
+    type: redis
+
+  auth-service:
+    type: fastapi
+    build:
+      source: ./services/auth
+    env:
+      DATABASE_URL: ${postgres.url}
+      REDIS_URL: ${redis.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+    domains:
+      - auth.platform.io
+
+  user-service:
+    type: fastapi
+    build:
+      source: ./services/users
+    env:
+      DATABASE_URL: ${postgres.url}
+      AUTH_URL: ${auth-service.url}
+    depends_on:
+      - postgres
+      - auth-service
+    domains:
+      - users.platform.io
+
+  order-service:
+    type: fastapi
+    build:
+      source: ./services/orders
+    env:
+      DATABASE_URL: ${postgres.url}
+      USER_SERVICE_URL: ${user-service.url}
+    depends_on:
+      - postgres
+      - user-service
+    domains:
+      - orders.platform.io
+
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      NEXT_PUBLIC_AUTH_URL: ${auth-service.external_url}
+      NEXT_PUBLIC_USER_URL: ${user-service.external_url}
+      NEXT_PUBLIC_ORDER_URL: ${order-service.external_url}
+    domains:
+      - platform.io
+```
+
+### AI/ML Application
+
+An AI image generator with a dedicated ML inference service:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: AI Image Generator
+
+services:
+  database:
+    type: postgres
+
+  redis:
+    type: redis
+
+  api:
+    type: fastapi
+    build:
+      source: ./api
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${redis.url}
+      MODEL_SERVICE_URL: ${ml-inference.url}
+    domains:
+      - api.aiapp.io
+
+  ml-inference:
+    type: custom
+    build:
+      source: ./ml
+      dockerfile: Dockerfile.gpu
+    env:
+      MODEL_PATH: /models/stable-diffusion
+    resources:
+      cpu: 4.0
+      memory: 16Gi
+    replicas:
+      min: 1
+      max: 5
+
+  worker:
+    type: custom
+    build:
+      source: ./worker
+    command: ["celery", "-A", "tasks", "worker"]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${redis.url}
+      ML_SERVICE_URL: ${ml-inference.url}
+    replicas: 3
+    resources: medium
+
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      NEXT_PUBLIC_API_URL: ${api.external_url}
+    domains:
+      - aiapp.io
+```
+
+### Multi-Port Service
+
+A MinIO object storage service exposing both the API and console ports:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: Object Storage
+
+services:
+  minio:
+    type: custom
+    image: minio/minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports: [9000, 9001]
+    env:
+      MINIO_CONSOLE_URL: ${minio.port_2.external_url}
+```
+
+Port 1 (9000) is the S3-compatible API. Port 2 (9001) is the web console. Each gets its own URL:
+
+```
+Port 1: https://my-app-minio-p4k8n7v2.hostess.run
+Port 2: https://my-app-minio-p4k8n7v2-2.hostess.run
+```
+
+---
+
+## Appendix: Validation Rules
+
+### Service names
+
+- **Length:** 2–63 characters (see naming rules under [Services](#services)).
+- **Reserved** (cannot be used as a service name): `hostess`, `default`, `system`
+
+### Dependencies
+
+| Rule | Detail |
+|---|---|
+| Circular | Not allowed — validation fails |
+| Existence | Referenced services or jobs must be defined |
+| Self-reference | A service cannot depend on itself |
+| Condition | `healthy` is for service targets; `completed` is for job targets |
+
+---
+
+## Appendix: Default Values
+
+A quick reference of defaults when fields are omitted:
+
+| Field | Default Value |
+|---|---|
+| `resources` | `medium` |
+| `replicas` | `1` |
+| Built-in health (no `health` block) | Type defaults with **30s** interval, **5s** timeout, **3** retries |
+| `health` block without `interval` | **10s** interval (when you define a custom `health` section) |
+| `lifecycle.migrate.timeout` / `lifecycle.post_deploy.timeout` | `5m` |
+| `backups.retention` | `7` |
+| `replicas.target_cpu` (autoscaling) | `70` |
+| `jobs.*.run` | `on_deploy` |
+| `jobs.*.timeout` | `5m` |
+| `jobs.*.retries` | `1` |
+
+### Default Storage by Preset
+
+| Preset | Storage |
+|---|---|
+| `small` | 10Gi |
+| `medium` | 20Gi |
+| `large` | 50Gi |
+| `xlarge` | 100Gi |

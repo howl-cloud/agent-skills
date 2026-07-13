@@ -1,0 +1,143 @@
+---
+title: Environments
+description: Target production, preview, staging, and custom environments with the CLI and configure per-environment domains.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Overview
+
+Environments represent deployment targets such as `production`, `preview`, `staging`, or a custom stage. Each environment has its own deployments, services, secrets, and domains.
+
+## YAML Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `domains` | object | Custom domains per service for this environment. Keys are service names, values are arrays of domain strings. |
+| `branches` | array | Branch patterns (exact names or globs like `release/*`) that route a Git push/PR to this environment. See [Git Integration](https://docs.hostess.sh/docs/git-integration). |
+| `ephemeral` | bool | Marks the environment as a short-lived preview target. Pull requests deploy here, each isolated from the others. |
+| `ttl` | string | Lifetime for ephemeral deployments (e.g. `24h`); abandoned previews are reaped after this. |
+
+## Branch routing & previews
+
+When a repository is [connected](https://docs.hostess.sh/docs/git-integration), a push or pull request is matched against each environment's `branches` patterns and deployed to the first match (exact name beats glob; unmatched branches fall back to the ephemeral environment). Mark an environment `ephemeral: true` to make it the per-PR preview target:
+
+```yaml title="hostess.yml"
+environments:
+  production:
+    branches: [main]
+  preview:
+    branches: ["*"]
+    ephemeral: true
+    ttl: 24h
+```
+
+A new project is seeded with a `production` environment and an ephemeral `preview` environment, so deploy-on-push and PR previews work without extra configuration.
+
+## Managing Environments
+
+Environments can be created, edited, and deleted from Studio or the CLI, in addition to declaring them in `hostess.yml`.
+
+### Studio
+
+The **Environments** tab in a project's sidebar shows every environment as a card: its type (Production or Preview badge), branch mapping ("Deploys from `main`" or "Matches `release/*`"), the live services currently running with their URLs, the latest deploy's status, commit, and age, a TTL countdown with an auto-delete marker for ephemeral environments, and any custom domains with their target service. Preview environments collapse into a "Previews" section so the list stays scannable as pull requests come and go.
+
+Click **New Environment** to create one, or the pencil icon on a card to edit it — set the name, comma-separated branch patterns (e.g. `release/*`), toggle **Ephemeral** to reveal TTL and auto-delete options, and mark branches as protected. Use the trash icon to delete a non-production environment.
+
+### CLI
+
+```bash title="Terminal"
+hostess environments list
+hostess environments create staging --branches main,release/*
+hostess environments create pr-preview --ephemeral --ttl 24h --auto-delete
+hostess environments update staging --ttl 72h
+hostess environments services staging
+hostess environments delete staging
+```
+
+`environments` (alias `envs`) resolves the project the same way `domains` and `secrets` do — pass `--project`/`-p`, or run from a directory with a `hostess.yml` that sets `name`. See the [CLI environments reference](https://docs.hostess.sh/docs/cli/environments) for the full flag list.
+
+### Deleting an environment
+
+Deleting an environment — from Studio or `hostess environments delete` — permanently removes the environment, its secrets, deployment history, and running services, after a confirmation. The production environment is protected and can't be deleted.
+
+## Deploying
+
+Pass the target environment explicitly when deploying:
+
+```bash title="Terminal"
+hostess deploy --env production
+hostess deploy --env staging
+hostess deploy --env preview
+```
+
+If `--env` is omitted, the CLI uses the most recently created environment in the project. On a standard new project, that is often `preview`, because it is created after `production`.
+
+<Callout type="info">
+In CI/CD pipelines, always use `--env` so deployments do not depend on project creation order or runner state.
+</Callout>
+
+## Per-Environment Domains
+
+Custom domains can be configured at two levels.
+
+### Service-Level Domains
+
+The `domains` field on a service is shorthand for production:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    domains:
+      - myapp.com
+      - www.myapp.com
+```
+
+### Environment-Level Domains
+
+Use `environments.<env>.domains` when different environments need different hostnames:
+
+```yaml title="hostess.yml"
+environments:
+  production:
+    domains:
+      frontend: [myapp.com, www.myapp.com]
+      api: [api.myapp.com]
+
+  staging:
+    domains:
+      frontend: [staging.myapp.com]
+      api: [api-staging.myapp.com]
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+```
+
+Domain rules:
+
+- Environment-level domains override service-level domains for that environment.
+- Service-level `domains` applies only to production.
+- A domain can appear in only one environment.
+- Use custom domains for application services such as `nextjs`, `fastapi`, and `custom`.
+
+## Secrets
+
+Secrets are scoped to environments through the CLI:
+
+```bash title="Terminal"
+hostess secrets add STRIPE_KEY --value "sk_live_abc123" --envs production
+hostess secrets add STRIPE_KEY --value "sk_test_xyz789" --envs staging,preview
+```
+
+This keeps production credentials separate from staging or preview credentials. See [Secrets](https://docs.hostess.sh/docs/secrets) for the full guide.

@@ -1,0 +1,376 @@
+---
+title: hostess orgs
+description: Manage organizations, team members, and invitations in Hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Manage Hostess organizations. Organizations are the top-level grouping for projects, billing, and team access. Every project belongs to an organization, and team members are managed at the organization level with role-based access control.
+
+---
+
+## orgs list
+
+List all organizations you're a member of.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs list
+```
+
+### Flags
+
+This command has no additional flags.
+
+### Examples
+
+```bash title="Terminal"
+hostess orgs list
+```
+
+```
+NAME                 SLUG                 CURRENT
+─────────────────────────────────────────────────
+Acme Corp            acme-corp
+My Team              my-team              ✓
+```
+
+The current organization (set via `hostess orgs switch`) is highlighted in the output.
+
+---
+
+## orgs create
+
+Create a new organization.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs create <name> [flags]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--slug` | `string` | Auto-generated from name | Organization slug (URL-safe identifier) |
+| `--description` | `string` | | Organization description |
+| `--set-current` | `bool` | `true` | Set as current organization after creation |
+
+### Examples
+
+```bash title="Terminal"
+# Create with auto-generated slug
+hostess orgs create "My Team"
+```
+
+```
+✓ Organization 'My Team' created
+  Slug: my-team
+✓ Set as current organization
+```
+
+```bash title="Terminal"
+# Create with explicit slug
+hostess orgs create "Acme Corporation" --slug acme
+
+# Create without setting as current
+hostess orgs create "Side Project" --set-current=false
+
+# Create with description
+hostess orgs create "My Team" --description "Engineering team projects"
+```
+
+---
+
+## orgs switch
+
+Switch your active organization. This sets the default organization for all subsequent CLI operations.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs switch <slug>
+```
+
+### Flags
+
+This command has no additional flags.
+
+### Examples
+
+```bash title="Terminal"
+hostess orgs switch acme-corp
+```
+
+```
+✓ Switched to organization 'Acme Corporation'
+```
+
+---
+
+## orgs info
+
+Display detailed information about an organization.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs info [slug] [flags]
+```
+
+If no slug is provided, shows info for the current organization.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+
+### Examples
+
+```bash title="Terminal"
+# Show current org info
+hostess orgs info
+```
+
+```
+Organization: My Team
+Slug: my-team
+Your Role: owner
+Description: Engineering team projects
+```
+
+```bash title="Terminal"
+# Show info for a specific org
+hostess orgs info acme-corp
+```
+
+---
+
+## orgs update
+
+Update organization settings. Requires the **owner** role.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs update [slug] [flags]
+```
+
+If no slug is provided, updates the current organization. At least one of `--name`, `--slug`, or `--description` is required.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+| `--name` | `string` | | New organization name |
+| `--slug` | `string` | | New organization slug |
+| `--description` | `string` | | New organization description |
+
+### Examples
+
+```bash title="Terminal"
+# Rename the current organization
+hostess orgs update --name "My New Team Name"
+```
+
+```
+✓ Organization updated
+  Name: My New Team Name
+  Slug: my-team
+```
+
+```bash title="Terminal"
+# Update slug for a specific org
+hostess orgs update old-slug --slug new-slug
+
+# Update description
+hostess orgs update my-team --description "Updated description"
+```
+
+<Callout type="info">
+If you change the slug of your current organization, the CLI config is automatically updated to reflect the new slug.
+</Callout>
+
+---
+
+## orgs delete
+
+Permanently delete an organization and all its projects. Requires the **owner** role.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs delete [slug] [flags]
+```
+
+If no slug is provided, deletes the current organization.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+| `--force` | `bool` | `false` | Skip confirmation prompt |
+
+### Examples
+
+```bash title="Terminal"
+# Delete with confirmation
+hostess orgs delete old-org
+```
+
+```
+Are you sure you want to delete organization 'Old Org'?
+This will delete all projects and cannot be undone.
+Type 'yes' to confirm: yes
+✓ Organization 'Old Org' deleted
+  Cleared current organization setting
+```
+
+```bash title="Terminal"
+# Delete without confirmation
+hostess orgs delete old-org --force
+```
+
+<Callout type="warn">
+Deleting an organization permanently removes all projects, deployments, environments, secrets, and domains within it.
+</Callout>
+
+---
+
+## orgs members
+
+List all members of an organization.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs members [slug] [flags]
+```
+
+If no slug is provided, lists members of the current organization.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+
+### Examples
+
+```bash title="Terminal"
+hostess orgs members
+```
+
+```
+Members of 'My Team':
+
+EMAIL                      NAME                 ROLE       JOINED
+────────────────────────────────────────────────────────────────────
+alice@example.com          Alice Smith          owner      4mo ago
+bob@example.com            Bob Johnson          developer  3mo ago
+carol@example.com          Carol Williams       viewer     2mo ago
+```
+
+```bash title="Terminal"
+# List members of a specific org
+hostess orgs members acme-corp
+```
+
+---
+
+## orgs invite
+
+Send an invitation to join an organization. Requires the **owner** role.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs invite <email> [slug] [flags]
+```
+
+If no slug is provided, invites to the current organization.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+| `--role` | `string` | **Required** | Member role: `owner`, `developer`, or `viewer` |
+
+### Role Descriptions
+
+| Role | Permissions |
+|------|------------|
+| `owner` | Full access. Can manage members, billing, and delete the organization. |
+| `developer` | Can create and update projects/environments, deploy, manage secrets and domains, view logs, connect to services, and trigger jobs. Cannot manage members or perform owner-only destructive administration. |
+| `viewer` | Metadata-only access to projects, deployments, services, metrics, and sanitized configuration. Cannot view logs, secret values, live service data, job logs, or trigger operational actions. |
+
+### Examples
+
+```bash title="Terminal"
+# Invite a developer
+hostess orgs invite bob@example.com --role developer
+```
+
+```
+✓ Invitation sent to bob@example.com as developer
+  Invitation ID: inv_abc123
+  Expires: 2025-04-10
+```
+
+```bash title="Terminal"
+# Invite an owner to a specific org
+hostess orgs invite alice@example.com acme-corp --role owner
+
+# Invite a viewer
+hostess orgs invite carol@example.com --role viewer
+```
+
+---
+
+## orgs remove
+
+Remove a member from an organization. Requires the **owner** role.
+
+### Usage
+
+```bash title="Terminal"
+hostess orgs remove <email> [slug] [flags]
+```
+
+If no slug is provided, removes from the current organization.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+| `--force` | `bool` | `false` | Skip confirmation prompt |
+
+### Examples
+
+```bash title="Terminal"
+# Remove with confirmation
+hostess orgs remove bob@example.com
+```
+
+```
+Are you sure you want to remove Bob Johnson (bob@example.com) from 'My Team'?
+Type 'yes' to confirm: yes
+✓ Removed bob@example.com from organization
+```
+
+```bash title="Terminal"
+# Remove without confirmation
+hostess orgs remove bob@example.com --force
+
+# Remove from a specific org
+hostess orgs remove carol@example.com acme-corp --force
+```

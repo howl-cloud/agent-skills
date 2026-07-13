@@ -1,0 +1,146 @@
+---
+title: Introduction
+description: Hostess is a deployment platform that lets you deploy your entire stack — Next.js, FastAPI, Postgres, Redis, and more — with a single command.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## What is Hostess?
+
+Hostess is **Docker Compose for Production** — a deployment platform that takes a single `hostess.yml` configuration file and deploys your entire multi-service stack to the cloud.
+
+Modern applications aren't single apps. They're ecosystems of services — frontends, APIs, databases, caches, workers, and more. While platforms like Vercel made deploying a single app effortless, deploying a full stack still meant stitching together multiple services, managing infrastructure, and writing pages of configuration.
+
+Hostess changes that. Define your services, run one command, and your entire stack is live — with automatic service discovery, managed databases, TLS certificates, and more.
+
+```bash
+hostess deploy
+```
+
+That's it.
+
+## How It Works
+
+Hostess follows a simple three-step workflow:
+
+### 1. Define your stack
+
+Create a `hostess.yml` file at the root of your project that declares your services, their dependencies, and how they connect:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-app
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      NEXT_PUBLIC_API_URL: ${api.external_url}
+    depends_on:
+      - api
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+
+  database:
+    type: postgres
+    resources: medium
+```
+
+### 2. Deploy with a single command
+
+Run `hostess deploy` from your terminal. Hostess handles the rest:
+
+- Builds container images from your source code
+- Provisions managed databases
+- Generates production-grade infrastructure
+- Wires services together with automatic service discovery
+- Issues TLS certificates for HTTPS
+- Deploys everything in the correct dependency order
+
+### 3. Your stack is live
+
+Every service gets a unique URL on the `hostess.run` domain. Your frontend is accessible, your API is connected to your database, and everything just works.
+
+```
+✓ Deployment complete
+
+frontend: https://my-app-frontend-k7xm9p2q.hostess.run
+api:      https://my-app-api-a3x9d2m1.hostess.run
+database: hostess connect database
+```
+
+## Why Hostess?
+
+| | Vercel / Netlify | Railway / Render | Hostess |
+|---|---|---|---|
+| **Single-app deploys** | Excellent | Good | Good |
+| **Multi-service orchestration** | Manual wiring | Limited | Built-in |
+| **Managed databases** | Third-party | Basic | First-class |
+| **Service discovery** | N/A | Manual env vars | Automatic (magic variables) |
+| **Dependency ordering** | N/A | Manual | Automatic (DAG-based) |
+| **Config format** | Platform-specific | Per-service | One file for everything |
+| **Preview environments** | Frontend only | Per-service | Full-stack |
+
+## Key Concepts
+
+Before diving in, here are the core concepts you'll encounter throughout the documentation:
+
+### Services
+
+A service is any component of your application — a web frontend, an API backend, a database, a cache, a worker process, or any containerized application. Services are defined in your `hostess.yml` file.
+
+Hostess supports several **service types** with smart defaults:
+- **`nextjs`** — Next.js applications
+- **`fastapi`** — FastAPI applications
+- **`postgres`** — Managed PostgreSQL databases
+- **`redis`** — Managed Redis instances
+- **`custom`** — Any containerized application
+
+### Magic Variables
+
+Magic variables are the way services discover and connect to each other. Instead of hardcoding URLs or managing environment variables manually, you reference other services using a simple syntax:
+
+```yaml
+env:
+  DATABASE_URL: ${database.url}           # Internal database URL
+  API_URL: ${api.external_url}            # Public API URL
+  CACHE_URL: ${cache.url}                 # Internal Redis URL
+  JWT_SECRET: ${secret:JWT_SECRET}        # Secret from Hostess vault
+```
+
+Hostess resolves these at deploy time, wiring everything together automatically.
+
+### Environments
+
+Environments represent different stages of your deployment lifecycle. Every project starts with a **production** environment, and you can add **preview**, **staging**, or custom environments with their own configuration, domains, and secrets.
+
+### Projects and Organizations
+
+A **project** corresponds to one `hostess.yml` configuration — your entire application stack. Projects live inside **organizations**, which provide team management, billing, and access control.
+
+## Next Steps
+
+<Cards>
+  <Card title="Quick Start" href="https://docs.hostess.sh/docs/quick-start">
+    Deploy your first application in under 5 minutes.
+  </Card>
+  <Card title="Installation" href="https://docs.hostess.sh/docs/installation">
+    Install the Hostess CLI on your machine.
+  </Card>
+  <Card title="Configuration Reference" href="https://docs.hostess.sh/docs/configuration">
+    Full reference for the hostess.yml configuration file.
+  </Card>
+  <Card title="CLI Reference" href="https://docs.hostess.sh/docs/cli">
+    Complete reference for all Hostess CLI commands.
+  </Card>
+</Cards>

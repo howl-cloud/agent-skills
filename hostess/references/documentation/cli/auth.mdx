@@ -1,0 +1,75 @@
+---
+title: Authentication Commands
+description: Log in, log out, and show the current Hostess account from the CLI.
+---
+
+## Description
+
+The auth commands manage the saved CLI session used by Hostess commands.
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `hostess login` | Start browser-based CLI login |
+| `hostess logout` | Clear the saved CLI session |
+| `hostess whoami` | Show the active authenticated user |
+
+## Login
+
+```bash title="Terminal"
+hostess login
+```
+
+`hostess login` creates a one-time browser link, waits for approval in Studio, then stores a token in `~/.hostess/config.json`.
+
+```
+Opening your browser to sign in to Hostess...
+
+If your browser did not open, visit:
+https://hostess.sh/cli/login/abc123
+
+Waiting for browser login...
+Signed in as you@example.com
+```
+
+Use `--no-browser` to print the link without opening a browser. Use `--force` to start a new login when a valid session already exists.
+
+## Logout
+
+```bash title="Terminal"
+hostess logout
+```
+
+Use `hostess logout` to clear the saved CLI session on the current machine.
+
+## Current User
+
+```bash title="Terminal"
+hostess whoami
+```
+
+`hostess whoami` prints a full summary of the active session: your name, email, username, whether your email is verified, current organization, linked accounts (e.g. GitHub), GitHub app installs, last login, and when the account was created. Fields are only shown when there's data for them — a fresh account without a linked GitHub account simply omits that line.
+
+```
+Signed in
+
+Name:             First Last
+Email:            user@example.com
+Username:         username
+Email verified:   yes
+Current org:      org-slug
+Linked accounts:  github: octocat
+GitHub installs:  example-org, howl-cloud
+Last login:       2026-07-06 09:15 PDT
+Account created:  2025-12-01
+```
+
+## CI Authentication
+
+For scripts and CI/CD, prefer `HOSTESS_TOKEN` or a command-specific `--token` flag where the command provides one:
+
+```bash title="Terminal"
+export HOSTESS_TOKEN="pat_abc123..."
+hostess deploy --env production --no-interactive
+```

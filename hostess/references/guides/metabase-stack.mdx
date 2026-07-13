@@ -1,0 +1,287 @@
+---
+title: Deploy the Metabase Stack
+description: Deploy the maintained Metabase example from howl-cloud/awesome-hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This guide deploys the Metabase stack from the maintained [`howl-cloud/awesome-hostess`](https://github.com/howl-cloud/awesome-hostess) examples repo. Clone the example, add the required Metabase secrets, validate it, and deploy.
+
+## What You'll Deploy
+
+The `awesome-hostess/metabase` module contains the Hostess deployment config, a local Compose mirror, demo business data, and a job script that registers that data source in Metabase:
+
+<Files>
+  <Folder name="metabase" defaultOpen>
+    <File name="hostess.yml" />
+    <File name="docker-compose.yml" />
+    <File name="README.md" />
+    <Folder name="db">
+      <File name="business-seed.sql" />
+    </Folder>
+    <Folder name="scripts">
+      <File name="register-metabase-db.mjs" />
+    </Folder>
+  </Folder>
+</Files>
+
+| Service | Role |
+|---------|------|
+| `db` | Hostess-managed Postgres database for Metabase application data and demo data |
+| `metabase` | Public Metabase app |
+| `seed-business-data` | One-shot job that loads the demo `business` schema into Postgres |
+| `register-business-db` | One-shot job that creates the admin account if needed and registers the demo data source |
+
+The public service is `metabase`. Postgres stays private inside the deployment network.
+
+<Callout type="info">
+  This compact demo stores Metabase application metadata and the seeded `business` schema in the same Postgres database. For production, connect Metabase to a separate analytics database or warehouse.
+</Callout>
+
+## Prerequisites
+
+- Hostess CLI installed and authenticated with `hostess login`
+- `openssl`
+
+<Steps>
+
+<Step>
+### Clone the example module
+
+Clone the examples repo and move into the Metabase module:
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/metabase
+```
+
+All commands in the rest of this guide run from `awesome-hostess/metabase`.
+</Step>
+
+<Step>
+### Create Metabase secrets
+
+Metabase needs an encryption key plus credentials for the initial admin account that the registration job creates:
+
+```bash title="Terminal"
+hostess secrets add METABASE_ENCRYPTION_SECRET_KEY --value "$(openssl rand -base64 32)"
+hostess secrets add METABASE_ADMIN_EMAIL --value "admin@example.com"
+hostess secrets add METABASE_ADMIN_PASSWORD --value "$(openssl rand -base64 24)"
+```
+
+<Callout type="warn">
+  Keep `METABASE_ENCRYPTION_SECRET_KEY` stable. It protects sensitive Metabase data such as database connection credentials.
+</Callout>
+</Step>
+
+<Step>
+### Validate the module
+
+Validate the maintained `hostess.yml` before deploying:
+
+```bash title="Terminal"
+hostess validate
+```
+
+You should see:
+
+```text
+✓ Configuration is valid
+```
+
+If you want to compare the local Compose mirror too:
+
+```bash title="Terminal"
+docker compose config --quiet
+```
+</Step>
+
+<Step>
+### Deploy the stack
+
+Deploy from the module directory:
+
+```bash title="Terminal"
+hostess deploy --env preview
+```
+
+If this is your first deployment from this directory, Hostess prompts you to create a project. The deployment output includes the public `metabase` URL:
+
+```text
+✓ Deployment complete
+
+  metabase: https://metabase-metabase-abc123.hostess.run
+```
+</Step>
+
+<Step>
+### Open Metabase
+
+Open the `metabase` URL from the deployment output:
+
+```text
+https://metabase-metabase-abc123.hostess.run
+```
+
+Log in with the `METABASE_ADMIN_EMAIL` and `METABASE_ADMIN_PASSWORD` values you stored in Hostess. The `register-business-db` job registers the seeded `business` schema as a `Business Demo` data source.
+</Step>
+
+<Step>
+### Smoke-test the deployment
+
+Check the public Metabase health endpoint:
+
+```bash title="Terminal"
+curl https://metabase-metabase-abc123.hostess.run/api/health
+```
+
+Then open Metabase and browse the `Business Demo` database. The seed job creates demo customers, products, orders, support tickets, and marketing campaigns.
+</Step>
+
+</Steps>
+
+## Hostess Configuration Highlights
+
+The maintained `hostess.yml` wires Metabase to Hostess-managed Postgres:
+
+```yaml title="hostess.yml excerpt"
+services:
+  db:
+    type: postgres
+    retention: permanent
+    resources:
+      preset: small
+    backups:
+      schedule: daily
+      retention: 14
+
+  metabase:
+    type: custom
+    image: metabase/metabase:latest
+    depends_on:
+      db:
+        condition: healthy
+      seed-business-data:
+        condition: completed
+    ports:
+      - port: 3000
+        public: true
+    resources: large
+    health:
+      http: /api/health
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    env:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: ${db.host}
+      MB_DB_PORT: ${db.port}
+      MB_DB_DBNAME: ${db.database}
+      MB_DB_USER: postgres
+      MB_DB_PASS: ${db.password}
+      MB_SITE_URL: ${metabase.external_url}
+      MB_ENCRYPTION_SECRET_KEY: ${secret:METABASE_ENCRYPTION_SECRET_KEY}
+      MB_ADMIN_EMAIL: ${secret:METABASE_ADMIN_EMAIL}
+      JAVA_OPTS: "-Xmx1g"
+```
+
+Two one-shot jobs prepare the demo data and Metabase setup:
+
+```yaml title="hostess.yml excerpt"
+jobs:
+  seed-business-data:
+    image: postgres:17-alpine
+    depends_on:
+      db:
+        condition: healthy
+    run: once
+    files:
+      - name: business-seed-sql
+        mount: /tmp/business-seed.sql
+        source: ./db/business-seed.sql
+    env:
+      PGHOST: ${db.host}
+      PGPORT: ${db.port}
+      PGDATABASE: ${db.database}
+      PGUSER: postgres
+      PGPASSWORD: ${db.password}
+    command:
+      - sh
+      - -c
+      - |
+        psql \
+          -v ON_ERROR_STOP=1 \
+          -f /tmp/business-seed.sql
+
+  register-business-db:
+    image: node:22-alpine
+    depends_on:
+      seed-business-data:
+        condition: completed
+      metabase:
+        condition: healthy
+    run: once
+    files:
+      - name: register-metabase-db-script
+        mount: /tmp/register-metabase-db.mjs
+        source: ./scripts/register-metabase-db.mjs
+    env:
+      METABASE_URL: ${metabase.url}
+      METABASE_ADMIN_EMAIL: ${secret:METABASE_ADMIN_EMAIL}
+      METABASE_ADMIN_PASSWORD: ${secret:METABASE_ADMIN_PASSWORD}
+      METABASE_DATABASE_NAME: "Business Demo"
+      METABASE_SCHEMA: business
+```
+
+The registration job waits for Metabase, creates the first admin account if needed, registers the `business` schema, and triggers a schema sync.
+
+## Run It Locally With Compose
+
+The example includes a local Compose mirror:
+
+```bash title="Terminal"
+docker compose up
+```
+
+The local app listens on `http://localhost:3000`. The local Metabase admin login is:
+
+```text
+Email: admin@example.com
+Password: MetabaseLocalDemo2026
+```
+
+## Updating The Stack
+
+Because this guide uses `howl-cloud/awesome-hostess`, stack updates come from the examples repo:
+
+```bash title="Terminal"
+cd awesome-hostess
+git pull
+cd metabase
+hostess validate
+hostess deploy --env preview
+```
+
+For changes that only affect the Metabase app process, deploy that service:
+
+```bash title="Terminal"
+hostess deploy --env preview -s metabase
+```
+
+For database, seed data, registration, or dependency changes, redeploy the full stack.
+
+## Notes
+
+- Required user-provided secrets are `METABASE_ENCRYPTION_SECRET_KEY`, `METABASE_ADMIN_EMAIL`, and `METABASE_ADMIN_PASSWORD`.
+- The demo stores Metabase metadata and the seeded `business` schema in the same Postgres database.
+- `metabase` uses `resources: large` because the Java app needs more memory than a small web service.
+- The two jobs are `run: once`; changing the seed SQL or registration script causes Hostess to evaluate the changed job definition on the next deploy.
+
+## What's Next
+
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** - Rotate Metabase secrets safely
+- **[Backups & Restore](https://docs.hostess.sh/docs/guides/backups-and-restore)** - Protect the Metabase Postgres database
+- **[Connect to Services](https://docs.hostess.sh/docs/guides/connect-to-services)** - Debug private Postgres access from your machine
+

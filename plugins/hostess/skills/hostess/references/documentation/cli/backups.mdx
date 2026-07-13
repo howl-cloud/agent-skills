@@ -1,0 +1,232 @@
+---
+title: hostess backups
+description: Create, list, restore, and delete service backups for Postgres, Redis, and custom services.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Manage backups for your database and stateful services. Hostess supports automated and manual backups for Postgres, Redis, and custom services with backup configurations. This command group lets you list existing backups, create on-demand backups, restore from a backup, and delete old backups.
+
+---
+
+## backups list
+
+List all backups for services in a deployment.
+
+### Usage
+
+```bash title="Terminal"
+hostess backups list [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--service` | | `string` | All services | Filter backups by service name |
+
+### Examples
+
+```bash title="Terminal"
+# List all backups across all services
+hostess backups list
+```
+
+```
+SERVICE            DATE                 SIZE       TYPE         FILE
+──────────────────────────────────────────────────────────────────────────────────────────
+database           2025-03-27 02:00:05  4.2 MB     scheduled    database-20250327-020005.sql.gz
+database           2025-03-26 02:00:03  4.1 MB     scheduled    database-20250326-020003.sql.gz
+database           2025-03-25 14:30:22  4.1 MB     manual       database-20250325-143022.sql.gz
+cache              2025-03-27 02:00:10  128 KB     scheduled    cache-20250327-020010.rdb
+```
+
+```bash title="Terminal"
+# List backups for a specific service
+hostess backups list --service database
+
+# List backups for a specific environment
+hostess backups list --env staging
+```
+
+---
+
+## backups create
+
+Create an on-demand backup for a service. This triggers an immediate backup job outside of the regular scheduled backup cycle.
+
+### Usage
+
+```bash title="Terminal"
+hostess backups create <service> [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+
+### Examples
+
+```bash title="Terminal"
+# Create a manual backup of the database
+hostess backups create database
+```
+
+```
+✓ Backup job created for database
+  Job: backup-database-manual-20250327-143022
+```
+
+```bash title="Terminal"
+# Create a backup in a specific environment
+hostess backups create database --env staging
+```
+
+<Callout type="info">
+Manual backups count toward your retention limit. If you have a retention of 7 and create manual backups, the oldest backups (whether scheduled or manual) will be removed when the limit is reached.
+</Callout>
+
+---
+
+## backups restore
+
+Restore a service from a backup. This overwrites the current database with the backup data.
+
+### Usage
+
+```bash title="Terminal"
+hostess backups restore <service> [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--backup` | | `string` | Interactive selection | Backup filename to restore |
+
+### Examples
+
+```bash title="Terminal"
+# Restore with interactive backup selection
+hostess backups restore database
+```
+
+```
+Available backups:
+  1) database-20250327-020005.sql.gz (2025-03-27 02:00:05, 4.2 MB)
+  2) database-20250326-020003.sql.gz (2025-03-26 02:00:03, 4.1 MB)
+  3) database-20250325-143022.sql.gz (2025-03-25 14:30:22, 4.1 MB)
+Select backup [1-3]: 1
+This will overwrite the current database. Continue?
+Type 'yes' to confirm: yes
+✓ Restore job created for database
+  Restore job: restore-database-20250327-143055
+  Safety backup job: pre-restore-database-20250327-143055
+```
+
+```bash title="Terminal"
+# Restore from a specific backup file
+hostess backups restore database --backup database-20250326-020003.sql.gz
+```
+
+<Callout type="warn">
+Restoring a backup **overwrites the current database**. Hostess automatically creates a safety backup before restoring, so you can recover if the restore causes issues. The safety backup filename is shown in the output.
+</Callout>
+
+<Callout type="info">
+If the `--backup` flag is not provided, Hostess shows an interactive list of available backups to choose from. In non-interactive environments (CI/CD), always provide the `--backup` flag explicitly.
+</Callout>
+
+---
+
+## backups delete
+
+Delete a specific backup file.
+
+### Usage
+
+```bash title="Terminal"
+hostess backups delete <service> [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--backup` | | `string` | **Required** | Backup filename to delete |
+
+### Examples
+
+```bash title="Terminal"
+# Delete a specific backup
+hostess backups delete database --backup database-20250325-143022.sql.gz
+```
+
+```
+Delete backup 'database-20250325-143022.sql.gz' for service 'database'?
+Type 'yes' to confirm: yes
+✓ Deleted backup database-20250325-143022.sql.gz
+```
+
+<Callout type="warn">
+Deleted backups are permanent. Review the backup filename before deleting it.
+</Callout>
+
+---
+
+## Configuring Backups
+
+Backups are configured in your `hostess.yml` file on the service definition. Here are the supported forms:
+
+### Postgres / Redis (Built-in)
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    resources: medium
+    backups: daily            # Shorthand: daily backups with 7 retention
+
+  cache:
+    type: redis
+    backups:
+      schedule: weekly        # Full form
+      retention: 14           # Keep 14 backups
+```
+
+### Custom Services
+
+For custom services, you provide the backup and restore commands:
+
+```yaml title="hostess.yml"
+services:
+  mongodb:
+    type: custom
+    image: mongo:7
+    backups:
+      schedule: daily
+      retention: 7
+      command: ["mongodump", "--archive=/backup/dump.gz", "--gzip"]
+      restore_command: ["mongorestore", "--drop", "--archive=/backup/dump.gz", "--gzip"]
+```
+
+### Schedule Options
+
+| Schedule | Frequency |
+|----------|-----------|
+| `daily` | Once per day |
+| `weekly` | Once per week |
+| `biweekly` | Once every two weeks |
+| `monthly` | Once per month |
+| Custom cron | Any 5-field cron expression (e.g., `0 2 * * *`) |

@@ -1,0 +1,343 @@
+---
+title: Set Up CI/CD with GitHub Actions
+description: Automate Hostess deployments with GitHub Actions using personal access tokens
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps, Step } from 'fumadocs-ui/components/steps'
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
+
+Automating deployments with GitHub Actions means every push to your main branch (or a specific trigger) automatically deploys your application to Hostess. No manual `hostess deploy` required.
+
+This guide walks you through creating a personal access token, configuring GitHub secrets, and writing a workflow file for automated deployments.
+
+---
+
+## Set Up Automated Deployments
+
+<Steps>
+<Step>
+
+### Create a Personal Access Token
+
+Personal access tokens (PATs) allow the Hostess CLI to authenticate in non-interactive environments like CI/CD.
+
+1. Open [Hostess Studio](https://hostess.sh)
+2. Navigate to **Settings** > **Personal Access Tokens**
+3. Click **Create Token**
+4. Give it a descriptive name (e.g., `github-actions-deploy`)
+5. Copy the generated token — you won't be able to see it again
+
+<Callout type="warn">
+Treat this token like a password. Anyone with this token can deploy to your Hostess projects. If compromised, revoke it immediately in Studio and create a new one.
+</Callout>
+
+</Step>
+<Step>
+
+### Add the token as a GitHub secret
+
+Store the token securely in your GitHub repository:
+
+1. Go to your repository on GitHub
+2. Navigate to **Settings** > **Secrets and variables** > **Actions**
+3. Click **New repository secret**
+4. Set the **Name** to `HOSTESS_TOKEN`
+5. Paste your Hostess PAT as the **Secret**
+6. Click **Add secret**
+
+</Step>
+<Step>
+
+### Create the workflow file
+
+Create the GitHub Actions workflow file in your repository:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy to Hostess
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to Hostess
+        run: hostess deploy --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+Commit and push this file to your repository:
+
+```bash title="Terminal"
+git add .github/workflows/deploy.yml
+git commit -m "Add Hostess deploy workflow"
+git push
+```
+
+</Step>
+<Step>
+
+### Verify the workflow runs
+
+After pushing, go to your repository's **Actions** tab on GitHub. You should see the "Deploy to Hostess" workflow running. Once it completes, your application is deployed.
+
+</Step>
+</Steps>
+
+---
+
+## Workflow Triggers
+
+### Deploy on push to main
+
+The most common setup — deploy every time code is pushed to the main branch:
+
+```yaml title=".github/workflows/deploy.yml"
+on:
+  push:
+    branches: [main]
+```
+
+### Deploy on PR merge
+
+To deploy only when pull requests are merged (not on direct pushes):
+
+```yaml title=".github/workflows/deploy.yml"
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to Hostess
+        run: hostess deploy --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+### Manual deployment trigger
+
+Add `workflow_dispatch` to allow manual deploys from the GitHub Actions UI:
+
+```yaml title=".github/workflows/deploy.yml"
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+```
+
+This adds a "Run workflow" button to the Actions tab, letting you trigger a deploy at any time.
+
+### Deploy to staging on develop branch
+
+Run separate workflows for different environments:
+
+```yaml title=".github/workflows/deploy-staging.yml"
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to staging
+        run: hostess deploy --env staging --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+---
+
+## Environment Targeting
+
+Without `--env`, `hostess deploy` targets the **most recently created** environment in the project (on a new project, that is usually **`preview`**). In GitHub Actions, always pass `--env` explicitly so deploys go to the environment you intend:
+
+```yaml title=".github/workflows/deploy.yml"
+# Deploy to production (recommended: always set --env)
+- run: hostess deploy --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+
+# Deploy to staging
+- run: hostess deploy --env staging --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+
+# Deploy to a custom environment
+- run: hostess deploy --env preview --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+---
+
+## Per-Service Deploys
+
+In monorepos, you often only want to deploy the services that changed. Use the `-s` flag to deploy specific services:
+
+```yaml title=".github/workflows/deploy.yml"
+- name: Deploy only API and worker
+  run: hostess deploy -s api -s worker --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+For automatic change detection, see the [per-service deploys guide](https://docs.hostess.sh/docs/guides/per-service-deploys).
+
+---
+
+## Full Workflow Examples
+
+### Basic production deploy
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy to Hostess
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to Hostess
+        run: hostess deploy --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+### Test then deploy
+
+Run your test suite before deploying:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Test and Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to Hostess
+        run: hostess deploy --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+### Multi-environment pipeline
+
+Deploy to staging first, then production after manual approval:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to staging
+        run: hostess deploy --env staging --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval in GitHub settings
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to production
+        run: hostess deploy --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+```
+
+<Callout type="info">
+The `environment: production` field in the workflow integrates with GitHub's [environment protection rules](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment). You can require manual approval, restrict to specific branches, or add wait timers before the production deploy proceeds.
+</Callout>
+
+---
+
+## Troubleshooting
+
+### "Authentication failed" error
+
+If the deploy step fails with an authentication error:
+
+1. Verify the `HOSTESS_TOKEN` secret is set correctly in your repository settings
+2. Check that the token hasn't expired or been revoked
+3. Ensure you're using `${{ secrets.HOSTESS_TOKEN }}` (not a hardcoded value)
+
+### "No hostess.yml found" error
+
+The Hostess CLI looks for `hostess.yml` in the repository root. Make sure:
+
+1. Your `actions/checkout` step runs before the deploy step
+2. The `hostess.yml` file is committed to your repository
+3. The file is in the root directory (not in a subdirectory)
+
+### Deploy succeeds but nothing changes
+
+If the workflow completes but your app doesn't update:
+
+1. Check that you're deploying to the correct environment (`--env` flag)
+2. Verify the branch trigger matches your push branch
+3. Look at the deployment details in Hostess Studio for any build errors

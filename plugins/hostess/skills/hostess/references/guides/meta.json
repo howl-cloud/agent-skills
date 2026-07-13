@@ -1,0 +1,29 @@
+{
+  "title": "Guides",
+  "root": true,
+  "pages": [
+    "index",
+    "---Tutorials---",
+    "deploy-your-first-app",
+    "deploy-your-second-app",
+    "migrate-from-docker-compose",
+    "nextjs-fastapi-postgres",
+    "supabase-stack",
+    "n8n-stack",
+    "open-llm",
+    "calcom-stack",
+    "meilisearch-stack",
+    "metabase-stack",
+    "---How-To---",
+    "custom-domains",
+    "managing-secrets",
+    "autoscaling",
+    "database-migrations",
+    "ci-cd-github-actions",
+    "connect-to-services",
+    "preview-environments",
+    "backups-and-restore",
+    "team-management",
+    "per-service-deploys"
+  ]
+}

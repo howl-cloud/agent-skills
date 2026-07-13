@@ -1,0 +1,10 @@
+{
+  "title": "Service Types",
+  "pages": [
+    "nextjs",
+    "fastapi",
+    "postgres",
+    "redis",
+    "custom"
+  ]
+}

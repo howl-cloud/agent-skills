@@ -1,0 +1,213 @@
+---
+title: hostess environments
+description: Create, list, update, and delete Hostess project environments from the CLI.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Manage a project's environments — production, preview, staging, or any custom stage. The `environments` command group (alias `envs`) covers what's also available in Studio's Environments tab: creating environments, editing their branch mapping and TTL, viewing their live services, and deleting them.
+
+`environments` resolves the project the same way `domains` and `secrets` do: `--project`/`-p`, falling back to the `name` field in `hostess.yml`.
+
+---
+
+## environments list
+
+List a project's environments.
+
+### Usage
+
+```bash title="Terminal"
+hostess environments list [flags]
+```
+
+Alias: `hostess envs list` (or `hostess envs ls`).
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--token` | | `string` | | Auth token |
+
+### Examples
+
+```bash title="Terminal"
+hostess environments list
+```
+
+```
+NAME                 TYPE         BRANCHES                     TTL                        PROTECTED
+production           production   main                         —                          yes
+preview              ephemeral    feature/*, fix/*             24h (auto-delete)          no
+staging              standard     —                            —                          no
+```
+
+`TYPE` is `production` for the reserved production environment, `ephemeral` for preview-style environments, and `standard` otherwise. `TTL` shows `(auto-delete)` next to the duration when auto-delete is enabled.
+
+---
+
+## environments create
+
+Create a new environment.
+
+### Usage
+
+```bash title="Terminal"
+hostess environments create <name> [flags]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--branches` | `string[]` | none | Branch patterns this environment tracks (comma-separated or repeatable) |
+| `--ephemeral` | `bool` | `false` | Mark this environment as ephemeral (e.g. per-PR previews) |
+| `--ttl` | `string` | none | Time-to-live for ephemeral resources (e.g. `24h`) |
+| `--auto-delete` | `bool` | `false` | Automatically delete this environment when its TTL expires |
+| `--protected` | `bool` | `false` | Protect this environment's branches |
+| `--project` | `string` | From `hostess.yml` | Project name |
+| `--token` | `string` | | Auth token |
+
+### Examples
+
+```bash title="Terminal"
+# A standard environment tied to a branch
+hostess environments create staging --branches main,release/*
+```
+
+```
+Environment 'staging' created.
+
+NAME                 TYPE         BRANCHES                     TTL                        PROTECTED
+staging              standard     main, release/*              —                          no
+```
+
+```bash title="Terminal"
+# An ephemeral preview environment
+hostess environments create pr-preview --ephemeral --ttl 24h --auto-delete
+
+# Protect a branch-mapped environment
+hostess environments create qa --branches release/* --branches hotfix/* --protected
+```
+
+---
+
+## environments update
+
+Update an existing environment. Only the flags you pass are changed — anything unset is left as-is.
+
+### Usage
+
+```bash title="Terminal"
+hostess environments update <name> [flags]
+```
+
+Accepts the same flags as `environments create`.
+
+### Examples
+
+```bash title="Terminal"
+# Extend the TTL
+hostess environments update staging --ttl 72h
+```
+
+```
+Environment 'staging' updated.
+
+NAME                 TYPE         BRANCHES                     TTL                        PROTECTED
+staging              standard     main, release/*              72h                        no
+```
+
+```bash title="Terminal"
+# Turn off auto-delete and protect the environment
+hostess environments update staging --auto-delete=false --protected
+```
+
+<Callout type="info">
+At least one of `--branches`, `--ephemeral`, `--ttl`, `--auto-delete`, or `--protected` is required.
+</Callout>
+
+---
+
+## environments delete
+
+Delete an environment.
+
+### Usage
+
+```bash title="Terminal"
+hostess environments delete <name> [flags]
+```
+
+Aliases: `hostess environments rm`, `hostess environments remove`.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--yes` | `bool` | `false` | Skip the confirmation prompt |
+| `--project` | `string` | From `hostess.yml` | Project name |
+| `--token` | `string` | | Auth token |
+
+### Examples
+
+```bash title="Terminal"
+hostess environments delete staging
+```
+
+```
+This will permanently delete environment 'staging', its secrets, and its deployment history, and tear down its running services. Continue? [y/N]
+```
+
+```bash title="Terminal"
+# Skip the confirmation prompt (CI)
+hostess environments delete staging --yes
+```
+
+<Callout type="warn">
+Deleting an environment permanently removes the environment, its secrets, deployment history, and running services. The production environment can't be deleted.
+</Callout>
+
+---
+
+## environments services
+
+Show the live services currently running in an environment.
+
+### Usage
+
+```bash title="Terminal"
+hostess environments services <name> [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--token` | | `string` | | Auth token |
+
+### Examples
+
+```bash title="Terminal"
+hostess environments services production
+```
+
+```
+SERVICE              STATUS         SHA        AGE      URL
+web                  Running        abc1234    1h       https://web.example.hostess.run
+worker               Failed         —          1h       —
+```
+
+This reflects what's actually running in the environment right now, not a single deployment's snapshot — services can be on different deployments if they were updated at different times (e.g. with `hostess deploy -s`).
+
+---
+
+## Related
+
+- [Environments](https://docs.hostess.sh/docs/environments) — branch routing, per-environment domains, and secrets scoping
+- [hostess domains](https://docs.hostess.sh/docs/cli/domains) — custom domains, which also target a specific environment
+- [hostess secrets](https://docs.hostess.sh/docs/cli/secrets) — secrets scoped per environment

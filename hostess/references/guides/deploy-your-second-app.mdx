@@ -1,0 +1,187 @@
+---
+title: Deploy Your Second App
+description: Deploy a FastAPI app with zero-config source builds and route-level metrics in Studio.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This guide walks you through deploying a two-service FastAPI stack from the `howl-cloud/awesome-hostess` examples repo. You'll use zero-config `source:` builds (no Dockerfile required) and the `hostess-python` SDK to unlock per-route metrics in Studio.
+
+This guide assumes you have the Hostess CLI installed and are logged in. If not, follow [Deploy Your First App](https://docs.hostess.sh/docs/guides/deploy-your-first-app) first.
+
+## What You'll Deploy
+
+- **api** — KickOff Sports product catalog: products, categories, and orders endpoints, instrumented with `hostess-python` for route-level metrics and traces
+- **traffic** — HTTP service that sends synthetic requests to `api`, so you have real data to look at in the Metrics tab
+
+<Steps>
+
+<Step>
+### Clone the example
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/simple-fastapi-app
+```
+
+<Files>
+  <Folder name="simple-fastapi-app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="app">
+        <File name="main.py" />
+      </Folder>
+      <File name="pyproject.toml" />
+    </Folder>
+    <Folder name="traffic">
+      <Folder name="app">
+        <File name="main.py" />
+      </Folder>
+      <File name="pyproject.toml" />
+    </Folder>
+    <File name="hostess.yml" />
+  </Folder>
+</Files>
+</Step>
+
+<Step>
+### Review the hostess.yml
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: simple-fastapi-app
+
+services:
+  api:
+    type: fastapi
+    source: ./api
+    public: true
+    resources: small
+
+  traffic:
+    type: fastapi
+    source: ./traffic
+    public: true
+    env:
+      API_URL: ${api.url}
+    depends_on:
+      - api
+    resources: small
+```
+
+A few things to notice:
+
+- **`source:`** instead of `build:` — Hostess auto-detects the language and framework from the directory and builds the image without a Dockerfile. It detects `pyproject.toml`, installs dependencies with `uv`, and figures out how to start the app.
+- **`public: true`** on both services — both get a public HTTPS URL.
+- **`${api.url}`** — the internal URL of `api` is injected into `traffic` at deploy time. The traffic service uses it to know where to send requests.
+</Step>
+
+<Step>
+### Review the instrumentation
+
+The `api` service adds one line to instrument the FastAPI app with `hostess-python`:
+
+```python title="api/app/main.py"
+from fastapi import FastAPI
+from hostess_sdk.fastapi import instrument
+
+app = FastAPI(title="KickOff Sports API", version="1.0.0")
+instrument(app)
+```
+
+That's it. `instrument(app)` wires up OpenTelemetry FastAPI instrumentation and exports spans to the Hostess collector. On each service's **Metrics** tab in Studio, this unlocks per-route traffic, latency, and status-code breakdowns — and sampled distributed traces you can open as a waterfall.
+</Step>
+
+<Step>
+### Validate and deploy
+
+```bash title="Terminal"
+hostess validate
+```
+
+```
+✓ hostess.yml is valid
+  2 services: api, traffic
+```
+
+```bash title="Terminal"
+hostess deploy
+```
+
+```
+No project found. Create one?
+  Project name: simple-fastapi-app
+✓ Project "simple-fastapi-app" created
+
+Environment: preview
+
+  api     → Installing
+  traffic → Installing
+
+  api     ✓ built
+  traffic ✓ built
+
+✓ Deployment complete (dep_def456)
+
+  api:     https://simple-fastapi-app-api-k7xm9p2q.hostess.run
+  traffic: https://simple-fastapi-app-traffic-m3n8x5w2.hostess.run
+```
+
+Both services build in parallel. The CLI streams live phase labels as each image is built and pushed.
+</Step>
+
+<Step>
+### Browse the API
+
+FastAPI generates interactive documentation at `/docs`. Open the `api` URL from the deploy output with `/docs` appended:
+
+```
+https://simple-fastapi-app-api-k7xm9p2q.hostess.run/docs
+```
+
+You'll see all available endpoints — products, categories, and orders — and can try them directly from the browser.
+</Step>
+
+<Step>
+### Generate traffic
+
+The `traffic` service exposes a `GET /run` endpoint that fires a burst of requests at the `api`. Visit the URL from the deploy output:
+
+```bash title="Terminal"
+curl https://simple-fastapi-app-traffic-m3n8x5w2.hostess.run/run
+```
+
+```json
+{"sent": 20, "ok": 18, "errors": 2}
+```
+
+The `count` query parameter controls how many requests to send:
+
+```bash title="Terminal"
+curl "https://simple-fastapi-app-traffic-m3n8x5w2.hostess.run/run?count=100"
+```
+
+Run it a few times to build up enough data to see in Studio.
+</Step>
+
+<Step>
+### View metrics in Studio
+
+Open [hostess.sh](https://hostess.sh) and navigate to your `simple-fastapi-app` project. Select the deployment, then click the **api** service and open the **Metrics** tab.
+
+You'll see:
+
+- **Request rate** and **latency** per route (e.g. `GET /products`, `GET /products/{product_id}`, `POST /orders`)
+- **Status code breakdown** — including the intentional 404s the traffic service sends to `/products/99`
+- **Traces** — click any route row to open sampled traces as a span waterfall
+</Step>
+
+</Steps>
+
+## What's Next
+
+- **[Next.js + FastAPI + Postgres](https://docs.hostess.sh/docs/guides/nextjs-fastapi-postgres)** — Add a frontend and database to your API
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** — Store API keys and credentials securely
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** — Point your own domain at your services
+- **[Insights](https://docs.hostess.sh/docs/insights)** — Learn what the Metrics tab shows and how sampling works

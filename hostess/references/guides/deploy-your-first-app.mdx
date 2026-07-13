@@ -1,0 +1,237 @@
+---
+title: Deploy Your First App
+description: Deploy a Next.js application with Hostess in under 5 minutes.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This tutorial walks you through deploying a small Next.js application from the `howl-cloud/awesome-hostess` examples repo. By the end, your app will be live on a public URL with automatic HTTPS.
+
+## Prerequisites
+
+- A Hostess account — [sign up at hostess.sh](https://hostess.sh) if you don't have one
+- Git installed locally
+- Docker installed (for building images)
+
+## What You'll Deploy
+
+A simple Next.js application running on Hostess with:
+
+- Automatic HTTPS via `*.hostess.run`
+- Zero-downtime deployments
+- Health checks and monitoring in Studio
+
+<Steps>
+
+<Step>
+### Install the Hostess CLI
+
+```bash title="Terminal"
+curl -fsSL https://hostess.sh/install.sh | sh
+```
+
+Verify the installation:
+
+```bash title="Terminal"
+hostess --version
+```
+
+Example output:
+
+```
+hostess version 0.1.x
+```
+</Step>
+
+<Step>
+### Log in to Hostess
+
+Authenticate the CLI with your Hostess account:
+
+```bash title="Terminal"
+hostess login
+```
+
+The CLI prints a one-time browser link. Sign in or create an account in Studio, approve the CLI login, then return to your terminal:
+
+```
+Opening your browser to sign in to Hostess...
+
+If your browser did not open, visit:
+https://hostess.sh/cli/login/abc123
+
+Waiting for browser login...
+Signed in as you@example.com
+```
+</Step>
+
+<Step>
+### Clone the example app
+
+Clone the Hostess examples repo and move into the simple Next.js app:
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/simple-next-app
+```
+
+The example includes the app code, Dockerfile, local Compose mirror, and Hostess config:
+
+<Files>
+  <Folder name="simple-next-app" defaultOpen>
+    <Folder name="app" defaultOpen>
+      <File name="layout.tsx" />
+      <File name="page.tsx" />
+    </Folder>
+    <Folder name="public">
+      <File name="favicon.ico" />
+    </Folder>
+    <File name="Dockerfile" />
+    <File name="docker-compose.yml" />
+    <File name="hostess.yml" />
+    <File name="next.config.ts" />
+    <File name="package.json" />
+    <File name="tsconfig.json" />
+  </Folder>
+</Files>
+</Step>
+
+<Step>
+### Review the Dockerfile
+
+The example already includes a production Dockerfile. Hostess uses it to build the Next.js app.
+
+<Callout type="info">
+  This Dockerfile uses Next.js standalone output mode. This is recommended for Hostess deployments.
+
+  ```ts title="next.config.ts"
+  const nextConfig = {
+    output: 'standalone',
+  };
+  export default nextConfig;
+  ```
+</Callout>
+</Step>
+
+<Step>
+### Review the hostess.yml
+
+The example also includes a `hostess.yml` file. This is the only configuration file Hostess needs:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: simple-next-app
+description: Minimal Next.js app for the Hostess deploy-your-first-app guide.
+
+services:
+  app:
+    type: nextjs
+    build:
+      source: .
+      dockerfile: Dockerfile
+    resources: small
+```
+
+Hostess automatically:
+
+- Detects port 3000 (the default for Next.js)
+- Configures health checks (`GET /`)
+- Assigns a public URL with HTTPS
+- Runs the app with the `small` resource preset
+
+<Callout type="info">
+  The `type: nextjs` tells Hostess this is a Next.js application. It provides smart defaults for ports and health checks. The `resources: small` line keeps this tutorial inexpensive; omit it to use the default `medium` preset.
+</Callout>
+
+<Callout type="info">
+  **No Dockerfile? Even simpler.** This example ships a Dockerfile for full control, but you can skip it entirely. Replace the `build` block with a single `source` line and Hostess auto-detects and builds the app for you:
+
+  ```yaml title="hostess.yml — zero-config"
+  services:
+    app:
+      type: nextjs
+      source: .
+      resources: small
+  ```
+
+  See [Build Configuration](/documentation/configuration#build-configuration) for when to use `source` vs `build`.
+</Callout>
+</Step>
+
+<Step>
+### Deploy your app
+
+From the `awesome-hostess/simple-next-app` directory, run:
+
+```bash title="Terminal"
+hostess deploy
+```
+
+If this is your first deployment, Hostess will prompt you to create a project:
+
+```
+No project found. Create one?
+? Project name: simple-next-app
+✓ Project "simple-next-app" created
+
+Environment: preview
+
+
+✓ Deployment complete (dep_abc123)
+
+  app: https://simple-next-app-app-k7xm9p2q.hostess.run
+```
+
+The entire process typically takes under 2 minutes. Without `--env`, the CLI targets the most recently created environment in the project (on a new Hostess project, that is usually **`preview`**). Use `hostess deploy --env production` when you want production explicitly.
+</Step>
+
+<Step>
+### Visit your live app
+
+Open the URL from the deployment output in your browser:
+
+```
+https://simple-next-app-app-k7xm9p2q.hostess.run
+```
+
+Your Next.js application is now live with:
+
+- Automatic HTTPS (TLS certificate provisioned by Let's Encrypt)
+- A stable URL that persists across future deployments
+- Zero-downtime deploys on every `hostess deploy`
+</Step>
+
+<Step>
+### View your deployment in Studio
+
+Open the Hostess dashboard to see your deployment details at [hostess.sh](https://hostess.sh). In Studio, you can:
+
+- View deployment status and logs
+- Monitor resource usage (CPU, memory)
+- See deployment history
+- Manage environment variables and secrets
+</Step>
+
+</Steps>
+
+## Making Changes
+
+To deploy updates, simply make your code changes and run `hostess deploy` again:
+
+```bash title="Terminal"
+# Edit your code...
+hostess deploy
+```
+
+Hostess performs zero-downtime deployments — your old version keeps serving traffic until the new one is healthy.
+
+## What's Next
+
+Now that you have a basic deployment running, explore more advanced tutorials:
+
+- **[Next.js + FastAPI + Postgres](https://docs.hostess.sh/docs/guides/nextjs-fastapi-postgres)** — Add a Python backend and database to your frontend
+- **[Migrate from Docker Compose](https://docs.hostess.sh/docs/guides/migrate-from-docker-compose)** — Convert an existing multi-service project
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** — Add API keys and credentials to your deployment
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** — Point your own domain at your app

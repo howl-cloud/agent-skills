@@ -1,0 +1,28 @@
+{
+  "title": "Documentation",
+  "root": true,
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "installation",
+    "authentication",
+    "quick-start",
+    "---Configuration---",
+    "configuration",
+    "magic-variables",
+    "secrets",
+    "---CLI Reference---",
+    "cli",
+    "---Platform---",
+    "studio",
+    "insights",
+    "ai-agents",
+    "---Concepts---",
+    "service-types",
+    "environments",
+    "custom-domains",
+    "git-integration",
+    "ci-cd",
+    "url-routing"
+  ]
+}

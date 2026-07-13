@@ -1,0 +1,30 @@
+---
+title: hostess update
+description: Upgrade the Hostess CLI to the latest release.
+---
+
+## Description
+
+Update the local Hostess CLI to the latest release.
+
+`hostess update` inspects the running binary and chooses the right upgrade path:
+
+- **Homebrew installs** on macOS/Linux run `brew upgrade hostess`
+- **Install script installs** on macOS/Linux run `curl -LsSf https://hostess.sh/install.sh | sh`
+- **Windows installs** run `irm https://hostess.sh/install.ps1 | iex`
+
+## Usage
+
+```bash title="Terminal"
+hostess update
+```
+
+## Flags
+
+This command has no additional flags.
+
+## Example
+
+```bash title="Terminal"
+hostess update
+```

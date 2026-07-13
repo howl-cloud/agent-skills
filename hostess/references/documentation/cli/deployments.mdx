@@ -1,0 +1,195 @@
+---
+title: hostess deployments
+description: List, inspect, and remove deployments for your Hostess projects.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Manage deployments for your Hostess projects. The `deployments` command group lets you list all deployments, inspect detailed status of a specific deployment, and remove deployments along with their resources.
+
+## Aliases
+
+| Alias | Full Command |
+|-------|-------------|
+| `hostess dep` | `hostess deployments` |
+| `hostess ls` | `hostess deployments list` |
+| `hostess list` | `hostess deployments list` |
+| `hostess inspect` | `hostess deployments inspect` |
+| `hostess rm` | `hostess deployments remove` |
+| `hostess delete` | `hostess deployments remove` |
+
+---
+
+## deployments list
+
+List deployments for a project, optionally filtered by environment.
+
+### Usage
+
+```bash title="Terminal"
+hostess deployments list [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | All environments | Filter by environment name |
+| `--all` | `-a` | `bool` | `false` | Show all projects in the organization |
+| `--format` | | `string` | `table` | Output format (`table` or `json`) |
+
+### Examples
+
+```bash title="Terminal"
+# List deployments for the current project
+hostess deployments list
+```
+
+```
+PROJECT              ENV            STATUS     COMMIT     CREATED      ID
+──────────────────────────────────────────────────────────────────────────────────────────
+my-app               production     Running    a1b2c3d    2h ago       dep_abc123
+my-app               production     Running    f4e5d6c    1d ago       dep_def456
+my-app               staging        Failed     9g8h7i6    3d ago       dep_ghi789
+```
+
+```bash title="Terminal"
+# Using the alias
+hostess ls
+
+# Using the nested alias
+hostess deployments ls
+
+# Filter by environment
+hostess ls --env production
+
+# Show all projects across the organization
+hostess ls --all
+
+# Output as JSON
+hostess ls --format json
+```
+
+---
+
+## deployments inspect
+
+Show detailed information about a specific deployment, including service status, URLs, and resources.
+
+### Usage
+
+```bash title="Terminal"
+hostess deployments inspect [deployment-id] [flags]
+```
+
+If no deployment ID is provided, the command inspects the **latest deployment** for the project.
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+
+### Examples
+
+```bash title="Terminal"
+# Inspect the latest deployment
+hostess deployments inspect
+```
+
+```
+Deployment: dep_abc123
+Status:     Running
+Branch:     main
+Commit:     a1b2c3d
+Created:    2h ago
+Completed:  2h ago
+
+Services:
+  NAME             TYPE       STATUS     URL
+  ──────────────────────────────────────────────────────────────────────
+  frontend         nextjs     Running    https://my-app-frontend-k7xm9p2q.hostess.run
+  api              fastapi    Running    https://my-app-api-a3x9d2m1.hostess.run
+  database         postgres   Running    (private)
+
+External URLs:
+  frontend:        https://my-app-frontend-k7xm9p2q.hostess.run
+  api:             https://my-app-api-a3x9d2m1.hostess.run
+
+Private Services:
+  database:        postgres — use: hostess connect database
+```
+
+```bash title="Terminal"
+# Inspect a specific deployment
+hostess deployments inspect dep_abc123
+
+# Using the alias
+hostess inspect
+
+# Inspect the latest staging deployment
+hostess inspect --env staging
+```
+
+---
+
+## deployments remove
+
+Remove a deployment and clean up all associated resources.
+
+### Usage
+
+```bash title="Terminal"
+hostess deployments remove [deployment-id] [flags]
+```
+
+If no deployment ID is provided, the command targets the **latest deployment** for the project.
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--force` | `-f` | `bool` | `false` | Skip confirmation prompt |
+
+### Examples
+
+```bash title="Terminal"
+# Remove a specific deployment (with confirmation prompt)
+hostess deployments remove dep_abc123
+```
+
+```
+This will delete deployment dep_abc123 and all its resources.
+  Status:   success
+  Services: frontend, api, database
+
+Are you sure?
+Type 'yes' to confirm: yes
+Removing deployment dep_abc123...
+✓ Deployment dep_abc123 removed
+```
+
+```bash title="Terminal"
+# Remove without confirmation
+hostess rm dep_abc123 --force
+
+# Using nested aliases
+hostess deployments rm dep_abc123 --force
+hostess deployments delete dep_abc123 --force
+
+# Remove the latest deployment
+hostess rm --force
+
+# Remove the latest staging deployment
+hostess delete --env staging --force
+```
+
+<Callout type="warn">
+Removing a deployment deletes all associated services and resources. For database services with `retention: permanent`, data is preserved. For `retention: ephemeral`, data is permanently deleted.
+</Callout>

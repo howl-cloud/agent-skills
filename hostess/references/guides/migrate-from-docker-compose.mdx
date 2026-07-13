@@ -1,0 +1,373 @@
+---
+title: Migrate from Docker Compose
+description: Convert your docker-compose.yml to hostess.yml and deploy to production.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+If you're running your application with Docker Compose locally, migrating to Hostess is straightforward. This guide walks through converting a multi-service `docker-compose.yml` into a `hostess.yml` and deploying it to production.
+
+## What You'll Migrate
+
+We'll convert a typical full-stack application with:
+
+- **Next.js** frontend
+- **FastAPI** backend
+- **PostgreSQL** database
+- **Redis** cache
+
+## The Starting Point
+
+Here's a typical `docker-compose.yml` for this stack:
+
+```yaml title="docker-compose.yml"
+version: "3.8"
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:mysecretpassword@db:5432/myapp
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=super-secret-key-change-me
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=mysecretpassword
+      - POSTGRES_DB=myapp
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+<Steps>
+
+<Step>
+### Run hostess init
+
+From your project directory (where `docker-compose.yml` lives), run:
+
+```bash title="Terminal"
+hostess init
+```
+
+Hostess detects `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, or `compose.yaml` in the current directory and generates a `hostess.yml`:
+
+```
+Created hostess.yml from docker-compose.yml (4 services)
+
+Next steps:
+  1. Review hostess.yml and adjust as needed
+  2. Run: hostess deploy
+```
+</Step>
+
+<Step>
+### Review the generated hostess.yml
+
+Open the generated `hostess.yml`. For the Compose file above, in a directory named `my-app`, `hostess init` generates this shape:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-app
+
+services:
+  db:
+    type: postgres
+    resources: small
+
+  redis:
+    type: redis
+    resources: small
+
+  backend:
+    type: fastapi
+    build:
+      source: ./backend
+    ports:
+      - 8000
+    env:
+      DATABASE_URL: ${db.url}
+      JWT_SECRET: super-secret-key-change-me
+      REDIS_URL: ${redis.url}
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    ports:
+      - 3000
+    env:
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+    depends_on:
+      - backend
+```
+
+This is a starting point. Before deploying, make the production-specific choices explicit:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-app
+
+services:
+  db:
+    type: postgres
+    resources: medium
+    retention: permanent
+    backups: daily
+
+  redis:
+    type: redis
+    resources: small
+    retention: permanent
+
+  backend:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${db.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+      REDIS_URL: ${redis.url}
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      NEXT_PUBLIC_API_URL: ${backend.external_url}
+    depends_on:
+      - backend
+```
+
+### What Changed (and Why)
+
+Here's a side-by-side comparison of each major difference:
+
+**Ports become service-level ports.** Hostess uses the service type defaults for common frameworks. Next.js defaults to 3000, and FastAPI defaults to 8000. You can keep explicit `ports:` when a service listens on a different port.
+
+<Tabs items={["Docker Compose", "Hostess"]}>
+  <Tab value="Docker Compose">
+    ```yaml
+    frontend:
+      ports:
+        - "3000:3000"
+    backend:
+      ports:
+        - "8000:8000"
+    ```
+  </Tab>
+  <Tab value="Hostess">
+    ```yaml
+    frontend:
+      type: nextjs    # Port 3000 automatically
+    backend:
+      type: fastapi   # Port 8000 automatically
+    ```
+  </Tab>
+</Tabs>
+
+**Database images become managed services.** Instead of specifying `image: postgres:16` and manually configuring volumes, passwords, and ports, you declare `type: postgres`. Hostess provisions the database, generates credentials, and exposes connection details through magic variables. Add `backups:` when you want scheduled backups.
+
+<Tabs items={["Docker Compose", "Hostess"]}>
+  <Tab value="Docker Compose">
+    ```yaml
+    db:
+      image: postgres:16
+      environment:
+        - POSTGRES_USER=postgres
+        - POSTGRES_PASSWORD=mysecretpassword
+        - POSTGRES_DB=myapp
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+    ```
+  </Tab>
+  <Tab value="Hostess">
+    ```yaml
+    db:
+      type: postgres
+      resources: medium
+    ```
+  </Tab>
+</Tabs>
+
+**Hardcoded connection strings become magic variables.** Instead of manually constructing `postgresql://postgres:mysecretpassword@db:5432/myapp`, you use `${db.url}`. Hostess resolves this to a full connection string with the correct hostname, port, and credentials at deploy time.
+
+<Tabs items={["Docker Compose", "Hostess"]}>
+  <Tab value="Docker Compose">
+    ```yaml
+    environment:
+      - DATABASE_URL=postgresql://postgres:mysecretpassword@db:5432/myapp
+      - REDIS_URL=redis://redis:6379
+    ```
+  </Tab>
+  <Tab value="Hostess">
+    ```yaml
+    env:
+      DATABASE_URL: ${db.url}
+      REDIS_URL: ${redis.url}
+    ```
+  </Tab>
+</Tabs>
+
+**Application secrets move to secret references.** Hardcoded app secrets and API keys in Docker Compose become secret references. This keeps sensitive values out of your config file and version control.
+
+<Tabs items={["Docker Compose", "Hostess"]}>
+  <Tab value="Docker Compose">
+    ```yaml
+    environment:
+      - JWT_SECRET=super-secret-key-change-me
+    ```
+  </Tab>
+  <Tab value="Hostess">
+    ```yaml
+    env:
+      JWT_SECRET: ${secret:JWT_SECRET}
+    ```
+  </Tab>
+</Tabs>
+
+**Storage becomes explicit production storage.** For managed databases (`type: postgres`, `type: redis`), use `retention: permanent` and resource storage settings for data you want to keep across deploys. For custom services, named Compose volumes convert to `persistence` mounts. For bind mounts, choose `files.source` for read-only config files or `persistence.mount` for durable service data.
+
+**Frontend API URL uses a magic variable.** Replace local browser URLs such as `http://localhost:8000` with `${backend.external_url}` so browser requests use the deployed backend URL.
+</Step>
+
+<Step>
+### Add secrets
+
+Create the Hostess project, then set the secret value referenced by `${secret:JWT_SECRET}`:
+
+```bash title="Terminal"
+hostess projects create my-app
+export JWT_SECRET="super-secret-key-change-me"
+hostess secrets add JWT_SECRET --envs production
+```
+
+```
+✓ Project 'my-app' created in organization 'my-org'
+✓ Secret 'JWT_SECRET' added to production
+```
+
+<Callout type="warn">
+  Keep secrets out of `hostess.yml` and version control. Use `${secret:NAME}` references and set values via the CLI or Studio.
+</Callout>
+
+If you have multiple secrets, set them all:
+
+```bash title="Terminal"
+hostess secrets add STRIPE_API_KEY --value sk_live_abc123 --envs production
+hostess secrets add SENDGRID_API_KEY --value SG.abc123 --envs production
+```
+</Step>
+
+<Step>
+### Deploy
+
+Run the deploy command:
+
+```bash title="Terminal"
+hostess deploy --env production --no-interactive
+```
+
+Example non-interactive output:
+
+```
+Deploying my-app (production)
+Services: backend, db, frontend, redis
+
+Deployment ID: dep_abc123
+Status: building
+Status: starting services
+Service db: ready
+Service backend: ready
+Service frontend: ready
+Service redis: ready
+Status: complete
+
+✓ Deployment complete (dep_abc123)
+backend: https://my-app-backend-a3x9d2m1.hostess.run
+frontend: https://my-app-frontend-k7xm9p2q.hostess.run
+
+→ View deployment: https://hostess.sh/dashboard/org/my-org/projects/proj_abc123/deployments/dep_abc123
+```
+</Step>
+
+<Step>
+### Verify the migration
+
+Test that everything works:
+
+1. **Open the frontend URL** in your browser — you should see your Next.js app
+2. **Check the backend** by visiting the API URL — confirm it responds
+3. **Verify database connectivity** — trigger any action that reads/writes to the database
+4. **Check Studio** for deployment health:
+
+```bash title="Terminal"
+open https://hostess.sh
+```
+</Step>
+
+</Steps>
+
+## Quick Reference: Docker Compose to Hostess
+
+| Docker Compose | Hostess | Notes |
+|----------------|---------|-------|
+| `image: postgres:16` | `type: postgres` | Managed database; add `backups:` for scheduled backups |
+| `image: redis:7` | `type: redis` | Managed Redis instance |
+| `build: ./app` | `build: { source: ./app }` | Same concept, different syntax |
+| `ports: ["3000:3000"]` | `type: nextjs` | Ports are inferred from service type |
+| `environment:` | `env:` | Same concept, supports magic variables |
+| `depends_on:` | `depends_on:` | Supports service health waits and completed job gates |
+| database `volumes:` | `retention` and `resources.storage` | Choose data retention and storage size for Postgres and Redis |
+| custom named `volumes:` | `persistence:` | Durable custom-service directories |
+| bind mounts | `files.source` or `persistence.mount` | Choose file mounts for read-only config, persistence for durable data |
+| `JWT_SECRET=xxx` | `${secret:NAME}` | Secrets stored securely outside the config |
+| `links:` | Magic variables | Service discovery via `${service.url}` |
+
+## What's Next
+
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** — Learn about secret scoping and rotation
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** — Point your own domain at your services
+- **[Database Migrations](https://docs.hostess.sh/docs/guides/database-migrations)** — Set up Alembic, Prisma, or other migration tools
+- **[Configure Autoscaling](https://docs.hostess.sh/docs/guides/autoscaling)** — Scale your services based on traffic

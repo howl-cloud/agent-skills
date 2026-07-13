@@ -1,0 +1,539 @@
+---
+title: PostgreSQL
+description: Deploy fully managed PostgreSQL databases on Hostess with automatic backups, connection management, and scoped databases.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+The `postgres` service type provisions a fully managed PostgreSQL database. Unlike application services, you do not need to provide a Dockerfile or build configuration — Hostess handles provisioning, configuration, backups, and connection management for you.
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+```
+
+That is the simplest possible Postgres service. Hostess provisions a PostgreSQL instance with `medium` resources (1 CPU, 1Gi memory, 20Gi storage) and makes it available to other services via magic variables.
+
+### Defaults
+
+When you use `type: postgres`, Hostess applies the following defaults:
+
+| Setting | Default Value |
+|---|---|
+| Port | `5432` |
+| Health check | `pg_isready` |
+| Resources | `medium` (1 CPU, 1Gi memory, 20Gi storage) |
+| Backups | Not configured (must be explicitly enabled) |
+| Username | `postgres` |
+| Database name | Same as the service name |
+
+---
+
+## Resource Presets and Storage
+
+PostgreSQL databases need CPU, memory, and persistent storage. You can use resource presets or configure resources explicitly.
+
+<Tabs items={["Preset", "Preset + Custom Storage", "Explicit"]}>
+<Tab value="Preset">
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    resources: large
+```
+
+| Preset | CPU | Memory | Storage |
+|---|---|---|---|
+| `small` | 0.5 cores | 512Mi | 10Gi |
+| `medium` | 1.0 cores | 1Gi | 20Gi |
+| `large` | 2.0 cores | 2Gi | 50Gi |
+| `xlarge` | 4.0 cores | 4Gi | 100Gi |
+
+</Tab>
+<Tab value="Preset + Custom Storage">
+
+Use a preset for CPU and memory but override the default storage:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 200Gi
+```
+
+This gives you the `large` preset's CPU (2.0 cores) and memory (2Gi) with 200Gi of storage instead of the default 50Gi.
+
+</Tab>
+<Tab value="Explicit">
+
+For full control, specify CPU, memory, and storage individually:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    resources:
+      cpu: 2.0
+      memory: 4Gi
+      storage: 100Gi
+```
+
+</Tab>
+</Tabs>
+
+### Choosing the Right Resources
+
+| Use Case | Recommended Preset | Custom Storage |
+|---|---|---|
+| Development and testing | `small` | Default (10Gi) |
+| Small production app | `medium` | Default (20Gi) |
+| Standard production database | `large` | 50-200Gi |
+| High-traffic, large dataset | `xlarge` | 200Gi-1Ti |
+
+<Callout type="info">
+Storage can be increased after initial deployment but cannot be decreased. Choose a size that gives you room to grow.
+</Callout>
+
+## Version, Extensions, and Connection Pooling
+
+The `special` block configures Postgres-specific options:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    special:
+      version: "17"                  # PostgreSQL version (e.g. "17" or "16.4")
+      extensions: [pgvector, pg_trgm]
+      pooler: true                   # managed PgBouncer connection pooler
+```
+
+| Field | Description |
+|---|---|
+| `version` | PostgreSQL version, applied when the database is first created. Majors 16, 17, and 18 are supported; a major-only value (or omitting the field, which defaults to 18) gets the platform-pinned minor release. |
+| `extensions` | Extensions installed automatically in every database, including scoped databases. Add more anytime and redeploy. |
+| `pooler` | Runs a managed PgBouncer pooler and exposes `${database.pooled_url}`. Use `pooler: {mode: session, instances: 2}` for finer control (default mode is `transaction`). |
+
+Popular extensions include `pgvector` (vector search for AI apps), `pg_trgm`
+(fuzzy text search), `hstore`, `pgcrypto`, `uuid-ossp`, and `pgaudit`. Hostess
+validates the list at deploy time and tells you if an extension isn't
+available.
+
+<Callout type="info">
+Use `${database.pooled_url}` from services that open many short-lived
+connections (serverless-style workloads, high replica counts). The pooler
+multiplexes them over a small number of real database connections.
+</Callout>
+
+## Backups
+
+Hostess supports automatic scheduled backups for PostgreSQL databases. Backups are not enabled by default — you must configure them explicitly.
+
+### Shorthand Form
+
+The simplest way to enable backups is with a schedule preset:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    backups: daily
+```
+
+Available schedule presets: `daily`, `weekly`, `biweekly`, `monthly`.
+
+### Full Form
+
+For more control over the schedule and retention:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    backups:
+      schedule: daily
+      retention: 14    # Keep the last 14 backups
+```
+
+You can also use a cron expression for custom schedules:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    backups:
+      schedule: "0 3 * * *"    # Every day at 3 AM UTC
+      retention: 30
+```
+
+### Point-in-Time Recovery
+
+Add `pitr: true` to enable continuous backup. Every change streams to durable
+storage, so you can restore the database to **any moment** within the
+retention window — not just to the latest snapshot:
+
+```yaml title="hostess.yml"
+services:
+  database:
+    type: postgres
+    backups:
+      schedule: daily
+      retention: 14
+      pitr: true
+```
+
+Restore to a point in time from the **Backups** tab in Studio: pick a date and
+time, confirm, and Hostess takes a safety backup before recovering the
+database to that moment. Scheduled backups keep running alongside and remain
+restorable individually.
+
+### Backup Configuration Reference
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `schedule` | string | - | `daily`, `weekly`, `biweekly`, `monthly`, or a 5-field cron expression |
+| `retention` | number | `7` | Number of backups to keep. Must be between 1 and 365. |
+| `pitr` | boolean | `false` | Continuous backup with point-in-time restore |
+
+<Callout type="warn">
+Backups are critical for production databases. Always configure backups for any database that stores data you cannot afford to lose.
+</Callout>
+
+### Managing Backups
+
+You can view backup history, create manual backups, and restore from backups in Hostess Studio or via the CLI:
+
+```bash title="Terminal"
+# List backups for a service
+hostess backups list --service database
+
+# Create a manual backup
+hostess backups create database
+
+# Restore from a specific backup
+hostess backups restore database --backup 20250326-020003-scheduled.sql.gz
+```
+
+See the [CLI backups reference](https://docs.hostess.sh/docs/cli/backups) for all available commands and options.
+
+---
+
+## Connecting from Other Services
+
+Other services connect to your Postgres database using magic variables. Hostess automatically generates secure credentials and constructs connection URLs for you.
+
+### Magic Variables
+
+When you define a `type: postgres` service, the following magic variables become available to any service that references it:
+
+| Variable | Description |
+|---|---|
+| `${database.url}` | Private PostgreSQL connection URL with credentials |
+| `${database.read_url}` | Private connection URL for reads — spreads load across all replicas |
+| `${database.pooled_url}` | Private connection URL through the PgBouncer pooler (requires `special.pooler`) |
+| `${database.external_url}` | Public TLS connection URL with credentials (`*.pg.hostess.run`) |
+| `${database.host}` | Private PostgreSQL hostname |
+| `${database.external_host}` | Public (branded) hostname |
+| `${database.port}` | PostgreSQL port number |
+| `${database.user}` | Username |
+| `${database.database}` | Database name |
+| `${database.password}` | Auto-generated password |
+
+<Callout type="info">
+Replace `database` with your actual service name. If your service is called `pg`, use `${pg.url}`. If it is called `main-db`, use `${main-db.url}`.
+</Callout>
+
+### Basic Connection Example
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+
+  database:
+    type: postgres
+    resources: medium
+```
+
+The `${database.url}` magic variable resolves to a full private PostgreSQL connection string. Your application just reads it from the `DATABASE_URL` environment variable — no manual configuration needed.
+
+### Connection Options
+
+| Scenario | Variable | Why |
+|---|---|---|
+| Backend connecting to database | `${database.url}` | Internal URL — stays inside the Hostess network, lowest latency |
+| Read-heavy workloads with replicas | `${database.read_url}` | Routes reads across all replicas while writes stay on `${database.url}` |
+| Many short-lived connections | `${database.pooled_url}` | PgBouncer multiplexes connections (requires `special.pooler`) |
+| Passing individual fields to an ORM | `${database.host}`, `${database.port}`, etc. | Some ORMs require individual connection parameters |
+
+---
+
+## Local Access
+
+To connect to your Postgres database from your local machine (for development, debugging, or running queries), use the `hostess connect` command:
+
+```bash title="Terminal"
+hostess connect database
+```
+
+This establishes a secure tunnel to your database and prints a local connection URL plus a `psql` command. You can also choose a local port for external tools like pgAdmin or TablePlus:
+
+```bash title="Terminal"
+# Bind the local tunnel to a specific port
+hostess connect database --local-port 15432
+```
+
+Then connect your database client to the local host and port shown in the command output.
+
+See the [CLI connect reference](https://docs.hostess.sh/docs/cli/connect) for all available options.
+
+---
+
+## Public Access
+
+Managed Postgres databases on Hostess can be accessed securely from outside the Hostess network via a public, TLS-secured endpoint on a unique `*.pg.hostess.run` hostname. This allows external tools — such as SQL clients and database management GUIs — to connect directly to your database, without requiring a `hostess connect` setup.
+
+The public connection string is exposed through the `${database.external_url}` magic variable:
+
+```
+postgresql://postgres:****@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
+```
+
+- Connections are **TLS-only**. `sslmode=require` encrypts the connection and works out of the box with `psql`, GUI clients (pgAdmin, DBeaver, TablePlus), and any ORM.
+```bash title="Terminal"
+psql "postgresql://postgres:****@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require"
+```
+
+You don't have to build this string by hand — the Hostess CLI (`hostess ps`) and the Studio database dashboard both surface it.
+
+<Callout type="info">
+Use `${database.external_url}` when the client lives **outside** the Hostess network. For service-to-service traffic inside the Hostess network, keep using the internal `${database.url}` — it's lower latency and never leaves the private network.
+</Callout>
+
+---
+
+## Working with Your Database in Studio
+
+Every Postgres service gets a full set of tools in Studio:
+
+- **Database** — browse tables, inspect schemas, and create, edit, or delete rows.
+- **Query** — run ad-hoc SQL against any database. Queries run read-only by
+  default; members with write access can switch to write mode for
+  `INSERT`/`UPDATE`/DDL and multi-statement scripts.
+- **Metrics** — live connections, transactions per second, cache hit ratio,
+  average query duration, and the slowest queries, plus historical charts
+  over 1h/6h/24h/7d ranges.
+- **Backups** — backup history, manual backups, restores, and point-in-time
+  restore when `pitr` is enabled.
+
+---
+
+## Scoped Databases
+
+By default, all services that reference `${database.url}` share the same database. If you need database isolation between services — for example, keeping your auth service's data separate from your analytics service — use scoped databases.
+
+### Explicit Group Map
+
+Define named groups that map to lists of consuming services:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      DATABASE_URL: ${postgres.url}
+    depends_on:
+      - postgres
+
+  worker:
+    type: custom
+    image: my-worker:latest
+    env:
+      DATABASE_URL: ${postgres.url}
+    depends_on:
+      - postgres
+
+  scheduler:
+    type: custom
+    image: my-scheduler:latest
+    env:
+      DATABASE_URL: ${postgres.url}
+    depends_on:
+      - postgres
+
+  postgres:
+    type: postgres
+    databases:
+      main: [api, worker]
+      analytics: [scheduler]
+```
+
+In this setup:
+
+- `api` and `worker` share a database named `postgres__main`
+- `scheduler` gets its own database named `postgres__analytics`
+- The `${postgres.url}` magic variable resolves **differently per service** based on which group the service belongs to
+
+### Per-Service Sugar
+
+If every consuming service should get its own isolated database:
+
+```yaml title="hostess.yml"
+services:
+  postgres:
+    type: postgres
+    databases: per_service
+```
+
+This automatically creates one database group per service that references `${postgres.url}`. For example, if `api` and `worker` both reference the database, they each get their own isolated database (`postgres__api` and `postgres__worker`).
+
+### Scoped Database Rules
+
+- A service that references `${<database>.url}` must belong to exactly one group
+- A service cannot appear in multiple groups for the same database
+- Group names must be DNS-safe (lowercase alphanumeric and hyphens)
+- When `databases` is configured, `${database.database}` resolves to the scoped database name (e.g., `postgres__main`)
+
+---
+
+## Complete Examples
+
+### Simple Database
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: .
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+
+  database:
+    type: postgres
+```
+
+### Production Database with Backups
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-app
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+    lifecycle:
+      migrate:
+        command: ["alembic", "upgrade", "head"]
+
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 100Gi
+    backups:
+      schedule: daily
+      retention: 30
+```
+
+### Scoped Databases for Microservices
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: microservices-platform
+
+services:
+  auth-service:
+    type: fastapi
+    build:
+      source: ./services/auth
+    env:
+      DATABASE_URL: ${postgres.url}
+    depends_on:
+      - postgres
+
+  user-service:
+    type: fastapi
+    build:
+      source: ./services/users
+    env:
+      DATABASE_URL: ${postgres.url}
+    depends_on:
+      - postgres
+
+  analytics-service:
+    type: custom
+    build:
+      source: ./services/analytics
+    env:
+      DATABASE_URL: ${postgres.url}
+    depends_on:
+      - postgres
+
+  postgres:
+    type: postgres
+    resources:
+      preset: large
+      storage: 200Gi
+    databases:
+      auth: [auth-service]
+      users: [user-service]
+      analytics: [analytics-service]
+    backups:
+      schedule: daily
+      retention: 14
+```
+
+### Multiple Postgres Instances
+
+You can define multiple Postgres services in the same project if you need completely separate database instances:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: multi-db
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      MAIN_DB_URL: ${main-db.url}
+      ANALYTICS_DB_URL: ${analytics-db.url}
+    depends_on:
+      - main-db
+      - analytics-db
+
+  main-db:
+    type: postgres
+    resources: large
+    backups: daily
+
+  analytics-db:
+    type: postgres
+    resources: xlarge
+    backups: weekly
+```

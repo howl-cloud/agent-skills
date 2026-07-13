@@ -1,0 +1,195 @@
+---
+title: hostess deploy
+description: Deploy all services defined in hostess.yml to the Hostess platform.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Deploy all services defined in your `hostess.yml` to the Hostess platform. This is the primary command you'll use to get your application running.
+
+For a new project, Hostess can prompt you to create it interactively and select an organization.
+
+The deploy command handles the entire deployment lifecycle:
+
+1. Reads your `hostess.yml` configuration
+2. Authenticates with the Hostess API
+3. Creates a new project in interactive mode when needed
+4. Uploads your source code
+5. Builds container images
+6. Deploys services in dependency order
+7. Shows real-time progress in an interactive TUI
+
+## Usage
+
+```bash title="Terminal"
+hostess deploy [flags]
+```
+
+## Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--file` | `-f` | `string` | `hostess.yml` | Path to hostess.yml config file |
+| `--repo` | `-r` | `string` | | GitHub repo to deploy from (e.g., `org/repo`) |
+| `--url` | | `string` | | URL to a remote hostess.yml file |
+| `--env` | | `string` | Most recently created environment if omitted (often `preview` on a new project) | Deploy to a specific environment (e.g., `staging`, `production`). Always set `--env` in CI. |
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name (overrides the `name` field in hostess.yml) |
+| `--service` | `-s` | `string[]` | All services | Deploy only selected service(s). Repeatable. |
+| `--no-interactive` | | `bool` | `false` | Run without prompts; useful for CI and scripts |
+| `--no-git` | | `bool` | `false` | Skip local git remote and commit detection |
+| `--token` | | `string` | | Auth token (for CI/CD) |
+
+<Callout type="info">
+The `--file`, `--repo`, and `--url` flags are mutually exclusive. You can only use one source at a time.
+</Callout>
+
+## Examples
+
+### Deploy from the current directory
+
+The most common usage. Reads `hostess.yml` from the current directory:
+
+```bash title="Terminal"
+hostess deploy
+```
+
+```
+Deploying my-app (preview)
+Services: api, database, frontend
+
+Deployment ID: dep_abc123
+Status: building
+Status: starting services
+Service database: ready
+Service api: ready
+Service frontend: ready
+Status: complete
+
+✓ Deployment complete (dep_abc123)
+api: https://my-app-api-a3x9d2m1.hostess.run
+frontend: https://my-app-frontend-k7xm9p2q.hostess.run
+
+→ View deployment: https://hostess.sh/dashboard/org/my-org/projects/proj_abc123/deployments/dep_abc123
+```
+
+### Deploy from a specific config file
+
+```bash title="Terminal"
+hostess deploy -f ../other-project/hostess.yml
+```
+
+### Deploy from a GitHub repository
+
+Deploy image-only services (no build step) directly from a GitHub repository:
+
+```bash title="Terminal"
+hostess deploy -r myorg/myproject
+```
+
+<Callout type="warn">
+Remote deploy sources are for configurations that reference pre-built images with the `image:` field. For services with `build:`, clone the repository and run `hostess deploy` from the source checkout.
+</Callout>
+
+### Deploy selected services only
+
+When you only want to update specific services without redeploying everything:
+
+```bash title="Terminal"
+hostess deploy -s api -s web
+```
+
+This is useful for large stacks where you've only changed one or two services. Unchanged services remain running at their current version.
+
+### Deploy to a specific environment
+
+```bash title="Terminal"
+hostess deploy --env staging
+```
+
+### Override the project name
+
+```bash title="Terminal"
+hostess deploy --project my-other-project
+```
+
+### CI/CD usage with token
+
+In CI/CD pipelines where interactive prompts aren't available:
+
+```bash title="Terminal"
+hostess deploy --token $HOSTESS_TOKEN --no-interactive
+```
+
+Or using an environment variable:
+
+```bash title="Terminal"
+export HOSTESS_TOKEN="pat_abc123..."
+hostess deploy --no-interactive
+```
+
+### Full CI/CD example
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy
+        run: hostess deploy --no-interactive --env production
+        env:
+          HOSTESS_TOKEN: ${{ secrets.HOSTESS_TOKEN }}
+```
+
+## Deployment Flow
+
+When you run `hostess deploy`, the following happens:
+
+1. **Configuration loading** — The CLI reads and validates your `hostess.yml`
+2. **Authentication** — Resolves your token from `--token` flag, `HOSTESS_TOKEN` env var, or saved login
+3. **Project resolution** — Finds your project by name, or prompts to create one
+4. **Environment selection** — Uses `--env` or, if omitted, the most recently created environment (often `preview` on a new project)
+5. **Source upload** — Archives and uploads your source code (for services with `build:` configs)
+6. **Build** — Hostess builds container images for each service
+7. **Deploy** — Services are deployed in dependency order
+8. **Health checks** — Hostess waits for all services to pass health checks
+9. **URL assignment** — Each public service gets a `hostess.run` URL
+
+### Interactive vs Non-Interactive
+
+In an interactive terminal (TTY), the deploy command shows a rich TUI with real-time status updates for each service. In non-interactive mode (CI/CD, piped output), it shows a simpler text output with deployment ID and final status.
+
+If the project is new in interactive mode, Hostess prompts you to create it and select an organization. In non-interactive mode (`--no-interactive`), create the project first with `hostess projects create <name>`.
+
+## Build Logs
+
+Build output streams **live** while each service builds — you see your own build steps as they happen:
+
+```
+── Build: api ──
+→ Preparing
+→ Pulling base image
+→ Installing
+   added 214 packages in 6s
+→ Building
+→ Pushing image
+```
+
+This works in both the interactive TUI and non-interactive output, and the same live logs appear on the build's page in [Studio](/documentation/studio).
+
+If a build fails, the deploy stops and the failing service's output is shown with a short, actionable summary of what went wrong. You can re-open a build's full logs anytime from Studio.
+
+## Cancellation
+
+You can cancel a running deployment by pressing `Ctrl+C`. Hostess will send a cancellation request to the API and clean up any in-progress resources.

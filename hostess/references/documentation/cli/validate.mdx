@@ -1,0 +1,109 @@
+---
+title: hostess validate
+description: Validate your hostess.yml configuration locally before deploying.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Validate your `hostess.yml` configuration file locally. This command parses the configuration and runs all validation checks without making any API calls or deploying anything. Use it to catch configuration errors before you deploy.
+
+## Usage
+
+```bash title="Terminal"
+hostess validate
+```
+
+## Flags
+
+This command has no additional flags. It always reads `hostess.yml` from the current directory.
+
+## Examples
+
+### Successful validation
+
+```bash title="Terminal"
+hostess validate
+```
+
+```
+✓ Configuration is valid
+```
+
+### Failed validation
+
+```bash title="Terminal"
+hostess validate
+```
+
+```
+Error: validation failed: service "frontend" has circular dependency: frontend → api → frontend
+```
+
+## What It Checks
+
+The validate command performs comprehensive checks on your configuration:
+
+### Schema Validation
+
+- **Required fields** — Ensures `version` and `services` are present
+- **Valid version** — Checks that the version string is supported (`"1.0"`)
+- **Service names** — Must be DNS-safe (lowercase, alphanumeric, hyphens only), unique, and max 63 characters
+- **Service types** — Must be one of the supported types (`nextjs`, `fastapi`, `postgres`, `redis`, `custom`)
+
+### Dependency Validation
+
+- **Circular dependencies** — Detected via depth-first search. If service A depends on B and B depends on A, validation fails
+- **Missing dependencies** — Service dependencies must reference services in the same config
+- **Self-references** — Service dependencies must point to other services
+
+### Resource Validation
+
+- **Valid presets** — Resource presets must be `small`, `medium`, `large`, or `xlarge`
+- **Numeric ranges** — CPU, memory, and storage values must be within valid ranges
+- **Storage on non-database services** — Storage is only valid for database service types
+
+### Build Validation
+
+- **Build, image, or source required** — Non-database services must have exactly one of `build`, `image`, or `source` (zero-config). Specifying more than one is an error.
+- **Build source path** — The build `source` field must be a valid path
+
+### Port Validation
+
+- **Valid port numbers** — Ports must be within valid TCP range
+- **Port conflicts** — Duplicate port numbers within a service are flagged
+
+### Domain Validation
+
+- **Valid hostnames** — Domains must be valid RFC 1123 hostnames (no wildcards, no scheme, lowercase)
+- **Max length** — Domain names must be 253 characters or fewer
+- **Unique domains** — Each domain appears once across services and environments
+
+### Magic Variable Validation
+
+- **Valid references** — Magic variable references must point to services that exist in the config
+- **Correct property names** — Properties like `url`, `host`, `port` must be valid for the referenced service type
+
+<Callout type="info">
+Running `hostess validate` before every deploy is a good habit, especially in CI/CD pipelines. It catches configuration errors instantly without waiting for a deployment to fail.
+</Callout>
+
+## CI/CD Usage
+
+Add validation as a step in your CI pipeline to catch configuration errors early:
+
+```yaml title=".github/workflows/validate.yml"
+name: Validate Config
+on: [pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+      - name: Validate configuration
+        run: hostess validate
+```

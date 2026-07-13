@@ -1,0 +1,348 @@
+---
+title: Connect to Services Locally
+description: Use hostess connect for local database access, shell sessions, and port forwarding
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps, Step } from 'fumadocs-ui/components/steps'
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
+
+The `hostess connect` command creates a secure tunnel between your local machine and your deployed services. This lets you connect to databases, open shell sessions, and forward ports — all without exposing services to the public internet.
+
+---
+
+## Two ways to reach a database
+
+| Path | Best for |
+|------|----------|
+| **Public connection string** | Pointing external tools or another host straight at the database over TLS |
+| **`hostess connect`** | Quick local access via a secure port-forward |
+
+The public connection string is a direct TLS endpoint. Grab it from `hostess ps`, the Studio database dashboard, or `${db.external_url}` (see [Postgres](https://docs.hostess.sh/docs/service-types/postgres#public-access) / [Redis](https://docs.hostess.sh/docs/service-types/redis#public-access)). The rest of this guide covers `hostess connect`.
+
+---
+
+## Port Forwarding to Databases
+
+The most common use case for `hostess connect` is accessing databases for local development, debugging, or data inspection.
+
+### Connect to PostgreSQL
+
+```bash title="Terminal"
+hostess connect database
+```
+
+Hostess opens a port-forward and shows you the connection details:
+
+```
+✓ Connected to database (postgres)
+  Local:  127.0.0.1:5432
+  Remote: port 5432
+
+  Connection URL:
+    postgresql://postgres:****@127.0.0.1:5432/database?sslmode=disable
+  Connect with psql:
+    PGSSLMODE=disable psql -h 127.0.0.1 -p 5432 -U postgres -d database
+```
+
+You can now connect using any PostgreSQL client — `psql`, pgAdmin, DBeaver, TablePlus, or your application's ORM:
+
+<Tabs items={["psql", "Connection String", "GUI Client"]}>
+<Tab value="psql">
+
+```bash title="Terminal"
+PGSSLMODE=disable psql -h 127.0.0.1 -p 5432 -U postgres -d database
+```
+
+The full connection URL is displayed when you run `hostess connect`.
+
+</Tab>
+<Tab value="Connection String">
+
+Use the connection string in your local `.env` file or application config:
+
+```bash title=".env"
+DATABASE_URL=postgresql://postgres:****@127.0.0.1:5432/database?sslmode=disable
+```
+
+</Tab>
+<Tab value="GUI Client">
+
+Use these settings in your GUI database client:
+
+| Field | Value |
+|-------|-------|
+| Host | `127.0.0.1` |
+| Port | `5432` |
+| Database | `database` |
+| Username | `postgres` |
+| Password | *(shown by hostess connect)* |
+
+</Tab>
+</Tabs>
+
+### Connect to Redis
+
+```bash title="Terminal"
+hostess connect cache
+```
+
+```
+✓ Connected to cache (redis)
+  Local:  127.0.0.1:6379
+  Remote: port 6379
+
+  Connect with redis-cli:
+    redis-cli -u redis://127.0.0.1:6379
+```
+
+Use `redis-cli` or any Redis client to connect:
+
+```bash title="Terminal"
+redis-cli -u redis://127.0.0.1:6379
+```
+
+### Connect to any service
+
+You can port-forward to any service by name, not just databases:
+
+```bash title="Terminal"
+# Forward to an API service
+hostess connect api
+
+# Forward to a worker service
+hostess connect worker
+```
+
+### Custom port
+
+If the service exposes multiple ports or you want to connect to a specific port:
+
+```bash title="Terminal"
+hostess connect api --port 8000
+```
+
+---
+
+## Choosing a Local Port
+
+By default, `hostess connect` maps the remote port to the same port on your local machine (e.g., remote `5432` maps to local `5432`). If that port is already in use, Hostess automatically picks the next available port.
+
+### Override the local port
+
+You can explicitly choose a local port with `--local-port`:
+
+```bash title="Terminal"
+# Map remote 5432 to local 5433
+hostess connect database --local-port 5433
+```
+
+```
+✓ Connected to database (postgres)
+  Local:  127.0.0.1:5433
+  Remote: port 5432
+
+  Connection URL:
+    postgresql://postgres:****@127.0.0.1:5433/database?sslmode=disable
+  Connect with psql:
+    PGSSLMODE=disable psql -h 127.0.0.1 -p 5433 -U postgres -d database
+```
+
+This is useful when:
+
+- You have a local PostgreSQL instance running on port 5432
+- You want to connect to multiple databases simultaneously
+- Your company firewall or security tool blocks certain ports
+
+### Connecting to multiple databases at once
+
+Open multiple terminals to connect to different services simultaneously:
+
+```bash title="Terminal 1"
+hostess connect database --local-port 5432
+```
+
+```bash title="Terminal 2"
+hostess connect analytics-db --local-port 5433
+```
+
+```bash title="Terminal 3"
+hostess connect cache --local-port 6379
+```
+
+### Auto port selection
+
+If the default port is in use and you don't specify `--local-port`, Hostess automatically selects the next available port and tells you which one it chose:
+
+```
+Note: port 5432 in use, using 5433 instead
+✓ Connected to database (postgres)
+  Local:  127.0.0.1:5433
+```
+
+---
+
+## Scoped Databases
+
+If you configured scoped databases with the `databases` field on your postgres or redis service, you can connect to a specific database group:
+
+```bash title="Terminal"
+hostess connect database --database analytics
+```
+
+This connects to the `analytics` scoped database within your postgres service, rather than the default shared database.
+
+---
+
+## Shell Access
+
+Open a shell session inside a running service for debugging, running one-off commands, or inspecting the file system.
+
+### Open a shell
+
+```bash title="Terminal"
+hostess connect shell api
+```
+
+This opens an interactive shell session inside one of the running `api` instances:
+
+```
+✓ Connected to api (shell)
+$ whoami
+appuser
+$ ls /app
+main.py  requirements.txt  alembic/  ...
+```
+
+### Custom shell command
+
+By default, Hostess opens `/bin/sh`. You can specify a different shell or command:
+
+```bash title="Terminal"
+# Use bash explicitly
+hostess connect shell api --command /bin/bash
+
+# Use sh if bash isn't available
+hostess connect shell api --command /bin/sh
+```
+
+### Run a one-off command
+
+Instead of opening an interactive session, you can run a single command and exit:
+
+```bash title="Terminal"
+# Check Python version
+hostess connect shell api --command "python --version"
+
+# Run a management command
+hostess connect shell web --command "python manage.py createsuperuser"
+
+# Check disk usage
+hostess connect shell api --command "df -h"
+```
+
+---
+
+## Common Use Cases
+
+### Local development against remote data
+
+Connect to your staging database to develop with realistic data:
+
+```bash title="Terminal"
+# Connect to staging database
+hostess connect database --env staging --local-port 5433
+```
+
+Then update your local `.env` to point to the forwarded port:
+
+```bash title=".env"
+DATABASE_URL=postgresql://postgres:****@127.0.0.1:5433/database?sslmode=disable
+```
+
+<Callout type="warn">
+Be careful when connecting to **production** databases from your local machine. Prefer staging or preview environments for development. If you must connect to production, use read-only queries and avoid modifying data.
+</Callout>
+
+### Debugging a running service
+
+When something goes wrong in production, shell into the service to investigate:
+
+```bash title="Terminal"
+# Check environment variables
+hostess connect shell api --command "env | sort"
+
+# View application logs
+hostess connect shell api --command "cat /app/logs/error.log"
+
+# Check network connectivity
+hostess connect shell api --command "curl -s http://database:5432"
+```
+
+### Running one-off data tasks
+
+Execute database queries or scripts against your deployed data:
+
+```bash title="Terminal"
+# Connect to database
+hostess connect database
+
+# In another terminal, run a script that connects to 127.0.0.1:5432
+python scripts/backfill_data.py
+```
+
+### Inspecting Redis cache
+
+Connect to Redis and inspect cached data:
+
+```bash title="Terminal"
+hostess connect cache
+```
+
+```bash title="In another terminal"
+redis-cli -u redis://127.0.0.1:6379
+
+127.0.0.1:6379> KEYS user:*
+1) "user:123:session"
+2) "user:456:session"
+
+127.0.0.1:6379> TTL user:123:session
+(integer) 3542
+```
+
+---
+
+## Environment Targeting
+
+Without `--env`, `hostess connect` uses the **most recent deployment** for the project (any environment). Pass `--env` when you need a specific environment:
+
+```bash title="Terminal"
+# Uses the latest deployment (any env) — add --env when you need a specific one
+hostess connect database
+
+# Connect using services from the production environment
+hostess connect database --env production
+
+# Another named environment
+hostess connect database --env staging
+```
+
+---
+
+## Keeping the Connection Alive
+
+The `hostess connect` command runs in the foreground and keeps the tunnel open as long as the process is running. To disconnect, press `Ctrl+C`:
+
+```
+✓ Connected to database (postgres)
+  Local:  127.0.0.1:5432
+
+  Press Ctrl+C to disconnect
+
+^C
+Disconnected.
+```
+
+<Callout type="info">
+The connection may time out after a period of inactivity. If your connection drops, simply run the `hostess connect` command again.
+</Callout>

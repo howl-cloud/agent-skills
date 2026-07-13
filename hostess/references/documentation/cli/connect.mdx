@@ -1,0 +1,240 @@
+---
+title: hostess connect
+description: Create secure tunnels to services for local access, or open interactive shells inside running service instances.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Description
+
+Create a secure tunnel to a deployed service or open an interactive shell inside a running service instance. The `connect` command is your primary tool for accessing private services like databases and caches from your local machine, as well as debugging running services interactively.
+
+## Usage
+
+```bash title="Terminal"
+# Port-forward to a service
+hostess connect <service> [flags]
+
+# Open a shell inside a service instance
+hostess connect shell <service> [flags]
+```
+
+---
+
+## connect (Port-Forward)
+
+Creates a local TCP tunnel to a remote service. This lets you connect to databases, caches, and other private services as if they were running on your local machine.
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--port` | | `int` | Primary port | Target port on the remote service |
+| `--local-port` | `-l` | `int` | Same as `--port` | Local port to bind |
+| `--database` | | `string` | First group | Database group for scoped Postgres/Redis services |
+
+### Default Ports by Service Type
+
+If you don't specify `--port`, Hostess uses the default port for the service type:
+
+| Service Type | Default Port |
+|-------------|-------------|
+| `postgres` | `5432` |
+| `redis` | `6379` |
+| `nextjs` | `3000` |
+| `fastapi` | `8000` |
+| Other | First port or `8080` |
+
+### Examples
+
+<Tabs items={["Postgres", "Redis", "HTTP Services"]}>
+  <Tab value="Postgres">
+    ```bash title="Terminal"
+    hostess connect database
+    ```
+
+    ```
+    Connecting to database...
+    ✓ Connected to database (postgres)
+      Local:  127.0.0.1:5432
+      Remote: port 5432
+
+      Connection URL:
+        postgresql://postgres:pass@127.0.0.1:5432/database?sslmode=disable
+      Connect with psql:
+        psql "postgresql://postgres:pass@127.0.0.1:5432/database?sslmode=disable"
+
+      Press Ctrl+C to disconnect
+    ```
+
+    Now you can connect from any local tool:
+
+    ```bash title="Terminal"
+    psql "postgresql://postgres:pass@127.0.0.1:5432/database?sslmode=disable"
+    ```
+  </Tab>
+  <Tab value="Redis">
+    ```bash title="Terminal"
+    hostess connect cache
+    ```
+
+    ```
+    Connecting to cache...
+    ✓ Connected to cache (redis)
+      Local:  127.0.0.1:6379
+      Remote: port 6379
+
+      Connect with redis-cli:
+        redis-cli -u redis://default:pass@127.0.0.1:6379
+
+      Press Ctrl+C to disconnect
+    ```
+
+    ```bash title="Terminal"
+    redis-cli -u redis://default:pass@127.0.0.1:6379
+    ```
+  </Tab>
+  <Tab value="HTTP Services">
+    ```bash title="Terminal"
+    # Connect to a custom service's web UI
+    hostess connect minio --port 9001
+    ```
+
+    ```
+    Connecting to minio...
+    ✓ Connected to minio (custom)
+      Local:  127.0.0.1:9001
+      Remote: port 9001
+
+      Open in browser: http://127.0.0.1:9001
+
+      Press Ctrl+C to disconnect
+    ```
+  </Tab>
+</Tabs>
+
+### Custom Port Mapping
+
+```bash title="Terminal"
+# Forward to a specific remote port
+hostess connect cache --port 6379
+
+# Use a different local port
+hostess connect database --local-port 15432
+```
+
+### Auto Port Selection
+
+If the default local port is already in use (for example, if you have a local Postgres running on 5432), Hostess automatically finds the next available port:
+
+```
+Connecting to database...
+Note: port 5432 in use, using 5433 instead
+✓ Connected to database (postgres)
+  Local:  127.0.0.1:5433
+  Remote: port 5432
+```
+
+<Callout type="info">
+Hostess tries up to 10 consecutive ports (e.g., 5432-5442) before giving up. This means you can connect to multiple databases simultaneously without manual port management.
+</Callout>
+
+### Scoped Databases
+
+If your database service uses the `databases` configuration for per-group isolation, use `--database` to connect to a specific group:
+
+```bash title="Terminal"
+# Connect to the "analytics" database group
+hostess connect postgres --database analytics
+```
+
+```
+Connecting to postgres...
+✓ Connected to postgres (postgres)
+  Local:  127.0.0.1:5432
+  Remote: port 5432
+
+  Database group: analytics
+  Connection URL:
+    postgresql://postgres:pass@127.0.0.1:5432/postgres__analytics?sslmode=disable
+  Connect with psql:
+    PGSSLMODE=disable psql -h 127.0.0.1 -p 5432 -U postgres -d postgres__analytics
+    # (password is included in the URL above)
+
+  Press Ctrl+C to disconnect
+```
+
+If you don't specify `--database`, Hostess connects to the first group by default. When there are multiple groups, all group connection info is shown:
+
+```
+  Database group: main (current)
+  Connection URL:
+    postgresql://postgres:pass@127.0.0.1:5432/postgres__main?sslmode=disable
+  Connect with psql:
+    PGSSLMODE=disable psql -h 127.0.0.1 -p 5432 -U postgres -d postgres__main
+    # (password is included in the URL above)
+
+  Database group: analytics
+  Connection URL:
+    postgresql://postgres:pass@127.0.0.1:5432/postgres__analytics?sslmode=disable
+  Connect with psql:
+    PGSSLMODE=disable psql -h 127.0.0.1 -p 5432 -U postgres -d postgres__analytics
+    # (password is included in the URL above)
+
+  Use --database <group> to connect to a different group.
+```
+
+---
+
+## connect shell
+
+Open an interactive shell session inside a running service instance. This is useful for debugging, running one-off commands, database migrations, or inspecting the runtime environment.
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--command` | `-c` | `string` | `/bin/sh` | Command to run inside the service instance |
+| `--component` | | `string` | | Runtime component name (advanced) |
+
+### Examples
+
+```bash title="Terminal"
+# Open a shell in the API service
+hostess connect shell api
+```
+
+```
+Connecting to api (fastapi)...
+/app $
+```
+
+```bash title="Terminal"
+# Run a specific command
+hostess connect shell api --command "python manage.py shell"
+
+# Run database migrations
+hostess connect shell api --command "alembic upgrade head"
+
+# Run npm commands in a frontend service
+hostess connect shell frontend --command "npm run db:migrate"
+
+# Use bash instead of sh
+hostess connect shell api --command "/bin/bash"
+
+# Connect to a specific runtime component
+hostess connect shell api --component sidecar
+```
+
+<Callout type="warn">
+The shell session runs inside the **production service instance**. Be careful with commands that modify state. For database operations, prefer using `hostess connect` and running commands from your local machine.
+</Callout>
+
+### Ending a Shell Session
+
+Type `exit` or press `Ctrl+D` to close the shell session. You can also press `Ctrl+C` to disconnect immediately.

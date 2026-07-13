@@ -1,0 +1,354 @@
+---
+title: URL Routing
+description: How Hostess generates and routes URLs for your services — stable URLs, deployment URLs, multi-port, and custom domains.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Overview
+
+Hostess gives public application services generated HTTPS URLs and keeps private services reachable from other services through magic variables. You can also attach custom domains when you want branded URLs.
+
+There are several types of URLs in Hostess:
+
+| URL Type | Description | Changes Between Deploys? |
+|---|---|---|
+| **Stable URL** | Points to the active version of a public service | Same URL, updated target |
+| **Deployment URL** | Points to a deployed commit or deployment-specific fallback | Same URL for that commit/fallback |
+| **Internal URL** | Used through magic variables for service-to-service communication | Stable within the environment |
+| **Custom Domain** | Your own branded domain name | Stable |
+
+---
+
+## Auto-Generated URL Format
+
+Public application services and public ports receive stable URLs on the `hostess.run` domain using this format:
+
+```
+https://{project}-{service}-{nanoID}.hostess.run
+```
+
+Where:
+
+- **`{project}`** is your project name (from the `name` field in `hostess.yml` or the project name in Studio)
+- **`{service}`** is the service name (the key in your `services` map)
+- **`{nanoID}`** is an 8-character alphanumeric identifier, generated once per service in the environment
+
+### Examples
+
+```
+https://my-app-frontend-k7xm9p2q.hostess.run
+https://my-app-api-a3x9d2m1.hostess.run
+https://my-app-minio-p4k8n7v2.hostess.run
+```
+
+These URLs use HTTPS with certificates provisioned automatically.
+
+---
+
+## NanoID
+
+The NanoID is an 8-character alphanumeric string (e.g., `k7xm9p2q`) that identifies a service in an environment. Key characteristics:
+
+- **Generated once** — The NanoID is created when a service is first deployed in an environment and persists across subsequent deployments.
+- **Stable** — The same service keeps the same NanoID in that environment, so stable URLs stay consistent between deploys.
+- **URL-safe** — Contains alphanumeric characters and is normalized into the generated hostname.
+
+Because the NanoID persists, you can share service URLs, bookmark them, or use them in webhook configurations.
+
+---
+
+## Stable URLs
+
+Stable URLs are the primary generated URLs you share with users, configure in callbacks, and use for public traffic. They route to the active version of a public service.
+
+```
+https://my-app-api-a3x9d2m1.hostess.run
+```
+
+### How Stable URLs Work
+
+When you deploy a new version of your service:
+
+1. Hostess builds and starts the new version alongside the existing one.
+2. The new version goes through health checks.
+3. Once the new version is healthy, the stable URL is updated to route traffic to it.
+4. The stable URL continues pointing to the active version until the new version is ready.
+
+This keeps stable URLs pointed at the active version while new deployments are prepared and checked.
+
+### Accessing Stable URLs
+
+Stable URLs are displayed in several places:
+
+- **Deploy output** — After a successful `hostess deploy`, the CLI prints public service URLs.
+- **Studio** — The project dashboard and service detail pages show service URLs.
+- **`hostess inspect`** — Run this command to see deployment details and URLs.
+
+---
+
+## Deployment URLs
+
+Deployment URLs are generated for public application services and public ports. When git metadata is available, they use the short git commit SHA instead of the NanoID:
+
+```
+https://{project}-{service}-{shortSHA}.hostess.run
+```
+
+Where `{shortSHA}` is the first 7 characters of the git commit SHA. When git metadata is unavailable, Hostess uses a deployment-specific fallback suffix.
+
+### Examples
+
+```
+https://my-app-frontend-a1b2c3d.hostess.run
+https://my-app-api-a1b2c3d.hostess.run
+```
+
+### When to Use Deployment URLs
+
+Deployment URLs are useful for:
+
+- **Rollback verification** — Before rolling back, visit the deployment URL of the previous version to confirm it still works correctly.
+- **PR previews** — Pull request deployments get deployment URLs, so reviewers can see what that PR's changes look like.
+- **Debugging** — Compare the behavior of two different deployments side by side by visiting their deployment URLs.
+- **Audit trail** — Deployment URLs make it easy to revisit a deployed version while that deployment is retained.
+
+### Deployment URL Lifetime
+
+Unlike stable URLs, deployment URLs are useful for reviewing a deployed version directly. If you deploy the same commit again, Hostess may reuse the same commit-based URL host for the newer deployment of that commit.
+
+<Callout type="info">
+Deployment URLs remain available while the corresponding deployment is retained. Preview deployments keep their URLs while the preview environment is active.
+</Callout>
+
+---
+
+## Multi-Port URLs
+
+When a service exposes multiple public ports, each public port gets its own URL. The first public port uses the standard URL format. Subsequent public ports get a suffix:
+
+```
+Port 1 (primary): https://{project}-{service}-{nanoID}.hostess.run
+Port 2:           https://{project}-{service}-{nanoID}-2.hostess.run
+Port 3:           https://{project}-{service}-{nanoID}-3.hostess.run
+```
+
+### Example: MinIO
+
+MinIO exposes an S3 API on port 9000 and a web console on port 9001:
+
+```yaml title="hostess.yml"
+services:
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - port: 9000
+        public: true
+      - port: 9001
+        public: true
+```
+
+The resulting URLs:
+
+```
+S3 API (port 1):   https://my-app-minio-p4k8n7v2.hostess.run
+Web Console (port 2): https://my-app-minio-p4k8n7v2-2.hostess.run
+```
+
+### Port Numbering Convention
+
+- **Port 1** is the first port in the `ports` list. It has no suffix and is the default port.
+- **Port 2, 3, etc.** correspond to the second, third, and subsequent ports in the list. They get a `-2`, `-3`, etc. suffix.
+
+This numbering is also used in magic variables: `${minio.port_1.url}`, `${minio.port_2.external_url}`, etc.
+
+---
+
+## Custom Domain URLs
+
+Custom domains point to the same service as generated URLs. When you configure a custom domain like `api.myapp.com`, it routes to the same service that `my-app-api-a3x9d2m1.hostess.run` routes to.
+
+Both URLs work simultaneously. The generated URL remains available after you add a custom domain.
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    domains:
+      - api.myapp.com
+```
+
+After deploying a public service:
+
+```
+Auto-generated: https://my-app-api-a3x9d2m1.hostess.run
+Custom domain:  https://api.myapp.com                     ← works after DNS setup
+```
+
+Adding, retargeting, or removing a domain through Studio or `hostess domains` updates routing immediately — no redeploy needed. If you retarget a domain to a different service or environment, the change takes effect right away and DNS verification carries over.
+
+See [Custom Domains](https://docs.hostess.sh/docs/custom-domains) for the full setup guide, including DNS configuration and TLS certificates.
+
+---
+
+## Internal URLs
+
+Internal URLs are used for service-to-service communication within your stack. Use magic variables such as `${api.url}` instead of hard-coding an internal hostname.
+
+Internal URL magic variables resolve at deploy time:
+
+```yaml
+API_URL: ${api.url}
+```
+
+For multi-port services, use port-specific variables:
+
+```yaml
+MINIO_API_URL: ${minio.port_1.url}
+MINIO_CONSOLE_URL: ${minio.port_2.url}
+```
+
+### When to Use Internal URLs
+
+Use internal URLs (via `${service.url}`) whenever **both the caller and the callee are Hostess services**:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      # Server-side rendering calls the API internally
+      API_URL: ${api.url}
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+```
+
+Internal URLs are the right default for server-side service-to-service calls because they stay within your Hostess environment.
+
+---
+
+## External URLs
+
+External URLs are the publicly accessible, HTTPS URLs that users, browsers, webhooks, and external services use to reach your services. They include both auto-generated `*.hostess.run` URLs and custom domains.
+
+### When to Use External URLs
+
+Use external URLs (via `${service.external_url}`) when the caller is **outside Hostess**. The target service or port should be public:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      # Browser JavaScript calls the API via the external URL
+      NEXT_PUBLIC_API_URL: ${api.external_url}
+      # → https://my-app-api-a3x9d2m1.hostess.run
+
+  api:
+    type: fastapi
+    public: true
+    build:
+      source: ./backend
+```
+
+Common scenarios for external URLs:
+
+| Scenario | Why External URL? |
+|---|---|
+| Browser JavaScript calling an API | The browser is outside Hostess |
+| Webhook callback URLs (Stripe, GitHub, etc.) | External services need to reach your service from outside |
+| Links displayed in your UI | Users click links in their browser |
+| OAuth redirect URLs | Identity providers redirect to your service from outside |
+| Mobile app API endpoints | Mobile clients are outside Hostess |
+
+---
+
+## URL Discovery
+
+There are several ways to find your service URLs:
+
+### Deploy Output
+
+After a successful deployment, the CLI prints public service URLs and connection guidance for private services:
+
+```bash title="Terminal"
+$ hostess deploy
+
+✓ Deployment complete
+
+frontend: https://my-app-frontend-k7xm9p2q.hostess.run
+api:      https://my-app-api-a3x9d2m1.hostess.run
+database: connection info available via `hostess inspect dep_abc123`
+```
+
+### hostess inspect
+
+View deployment URLs and service information:
+
+```bash title="Terminal"
+$ hostess inspect
+
+Deployment: dep_abc123
+Status:     Ready
+Branch:     main
+Commit:     a1b2c3d
+Created:    5m ago
+Completed:  2m ago
+
+Services:
+  NAME             TYPE       STATUS     URL
+  ──────────────────────────────────────────────────────────────────────
+  frontend         nextjs     Ready      https://my-app-frontend-k7xm9p2q.hostess.run
+  api              fastapi    Ready      https://my-app-api-a3x9d2m1.hostess.run
+  database         postgres   Ready      (private)
+
+External URLs:
+  frontend:        https://my-app-frontend-k7xm9p2q.hostess.run
+  api:             https://my-app-api-a3x9d2m1.hostess.run
+
+Private Services:
+  database:        postgres — use: hostess connect database
+```
+
+### Studio
+
+The project dashboard in Hostess Studio displays all service URLs with clickable links. The deployment detail page shows both stable and deployment-specific URLs.
+
+---
+
+## URL Routing Summary
+
+Here is a complete reference of all URL types and when to use each:
+
+| URL Type | Format | Use Case |
+|---|---|---|
+| Stable URL | `https://{project}-{service}-{nanoID}.hostess.run` | Public service traffic, sharing with users |
+| Deployment URL | `https://{project}-{service}-{shortSHA}.hostess.run` | PR previews, rollback verification |
+| Multi-port URL | `https://{project}-{service}-{nanoID}-{N}.hostess.run` | Accessing additional public ports |
+| Internal URL | `${service.url}` | Service-to-service communication |
+| Custom domain | `https://yourdomain.com` | Branded production URLs |
+
+### Magic Variable Quick Reference
+
+| Variable | Resolves To |
+|---|---|
+| `${service.url}` | Internal URL (for service-to-service) |
+| `${service.external_url}` | External stable URL (for browsers, webhooks) |
+| `${service.host}` | Internal hostname |
+| `${service.external_host}` | External hostname |
+| `${service.port}` | Port number |
+| `${service.port_N.url}` | Internal URL for port N |
+| `${service.port_N.external_url}` | External URL for port N |
+
+See [Magic Variables](https://docs.hostess.sh/docs/magic-variables) for the complete reference.

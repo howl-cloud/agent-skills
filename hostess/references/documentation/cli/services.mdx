@@ -1,0 +1,180 @@
+---
+title: hostess services
+description: List services in a deployment and stream service logs.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+View and monitor services within a deployment. The `services` command group lets you list all services with their status and URLs, and stream real-time logs from any running service.
+
+## Aliases
+
+| Alias | Full Command |
+|-------|-------------|
+| `hostess ps` | `hostess services list` |
+| `hostess logs` | `hostess services logs` |
+| `hostess services ls` | `hostess services list` |
+
+---
+
+## services list
+
+List all services in the latest deployment for a project, showing their type, status, ports, and URLs.
+
+### Usage
+
+```bash title="Terminal"
+hostess services list [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--detailed` | | `bool` | `false` | Show detailed per-service view with port visibility |
+
+### Examples
+
+```bash title="Terminal"
+# List services
+hostess services list
+```
+
+```
+SERVICE          TYPE       STATUS     PORTS     URL
+────────────────────────────────────────────────────────────────────────────────
+frontend         nextjs     Running    3000      https://my-app-frontend-k7xm9p2q.hostess.run
+api              fastapi    Running    8000      https://my-app-api-a3x9d2m1.hostess.run
+database         postgres   Running    5432      postgresql://***@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
+cache            redis      Running    6379      rediss://my-app-cache-p2x8k4n7.default:***@redis.hostess.run:6379
+```
+
+```bash title="Terminal"
+# Using the alias
+hostess ps
+
+# Using the nested alias
+hostess services ls
+
+# Detailed view with port visibility info
+hostess ps --detailed
+```
+
+```
+SERVICE: frontend
+  Type:     nextjs
+  Status:   Running
+
+  Ports:
+    PORT     VISIBILITY   URL
+    3000     public       https://my-app-frontend-k7xm9p2q.hostess.run
+
+SERVICE: api
+  Type:     fastapi
+  Status:   Running
+
+  Ports:
+    PORT     VISIBILITY   URL
+    8000     public       https://my-app-api-a3x9d2m1.hostess.run
+
+SERVICE: database
+  Type:     postgres
+  Status:   Running
+
+  Connection: postgresql://***@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
+  Fallback:   hostess connect database
+
+SERVICE: cache
+  Type:     redis
+  Status:   Running
+
+  Connection: rediss://my-app-cache-p2x8k4n7.default:***@redis.hostess.run:6379
+  Fallback:   hostess connect cache
+```
+
+```bash title="Terminal"
+# List services for a specific environment
+hostess ps --env staging
+```
+
+<Callout type="info">
+For `postgres` and `redis`, the URL is the public TLS connection string. Passwords show as `***` unless your role can view secrets. See [Connect to Services](https://docs.hostess.sh/docs/guides/connect-to-services).
+</Callout>
+
+---
+
+## services logs
+
+Stream logs from a running service in real time.
+
+### Usage
+
+```bash title="Terminal"
+hostess services logs <service> [flags]
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted | Select the latest deployment in an environment |
+| `--follow` | `-f` | `bool` | `false` | Stream logs in real-time (like `tail -f`) |
+| `--tail` | `-n` | `int` | `100` | Number of recent lines to show |
+| `--since` | | `string` | | Show logs since a duration ago (e.g., `5m`, `1h`, `2d`) |
+| `--timestamps` | | `bool` | `false` | Show timestamps with each log line |
+
+### Examples
+
+```bash title="Terminal"
+# View recent logs from the API service
+hostess services logs api
+```
+
+```
+Streaming logs for api...
+
+[2025-03-27 14:23:01] INFO:     Application startup complete.
+[2025-03-27 14:23:01] INFO:     Uvicorn running on http://0.0.0.0:8000
+[2025-03-27 14:23:05] INFO:     192.168.1.1 - "GET /health HTTP/1.1" 200
+[2025-03-27 14:23:12] INFO:     192.168.1.1 - "GET /api/users HTTP/1.1" 200
+```
+
+```bash title="Terminal"
+# Using the alias — stream in real-time
+hostess logs api --follow
+
+# Show last 50 lines
+hostess logs api --tail 50
+
+# Show logs from the last hour
+hostess logs api --since 1h
+
+# Combine options
+hostess logs api --follow --tail 20 --since 30m
+
+# Show timestamps
+hostess logs api --timestamps
+
+# Logs from a specific environment
+hostess logs api --env staging --follow
+```
+
+### Duration Syntax for `--since`
+
+The `--since` flag accepts simple duration strings:
+
+| Suffix | Meaning | Example |
+|--------|---------|---------|
+| `s` | Seconds | `30s` |
+| `m` | Minutes | `5m` |
+| `h` | Hours | `1h` |
+| `d` | Days | `2d` |
+
+<Callout type="info">
+Press `Ctrl+C` to stop streaming logs when using `--follow`.
+</Callout>

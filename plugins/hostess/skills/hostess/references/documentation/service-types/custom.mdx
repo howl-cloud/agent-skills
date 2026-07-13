@@ -1,0 +1,593 @@
+---
+title: Custom
+description: Deploy any containerized application on Hostess using the custom service type — workers, proxies, ML models, and more.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+The `custom` service type is the escape hatch for anything not covered by Hostess's built-in service types. It lets you deploy any containerized application — background workers, reverse proxies, ML inference servers, object storage, message queues, or any other service that runs in a Docker container.
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    build:
+      source: ./worker
+    ports: [8080]
+```
+
+Unlike `nextjs`, `fastapi`, `postgres`, and `redis`, the `custom` type is intentionally generic. It defaults to port `8080` and has no built-in health check, so set `ports` and `health` to match your application.
+
+### Defaults
+
+When you use `type: custom`, the following defaults apply:
+
+| Setting | Default Value |
+|---|---|
+| Port | `8080` |
+| Health check | None (must be configured) |
+| Resources | `medium` (1 CPU, 1Gi memory) |
+| Replicas | `1` |
+
+---
+
+## When to Use Custom
+
+Use `type: custom` when:
+
+- **You use another language or framework** — Anything beyond the dedicated Next.js and FastAPI types: Go, Rust, Ruby on Rails, Express.js, Django, Flask, and more.
+- **You are running a background worker** — Celery workers, Sidekiq, custom queue consumers, or any non-HTTP process.
+- **You are deploying a third-party image** — Public pre-built images from Docker Hub, GHCR, or another registry (MinIO, Nginx, Keycloak, etc.).
+- **You need a supporting utility service** — Reverse proxies, monitoring agents, log shippers, or cron job runners.
+- **You are running an ML model** — Inference servers, model APIs, or batch processing jobs.
+
+---
+
+## Build or Image
+
+Custom services require either `build` (build from source code) or `image` (use a pre-built container image). You must specify exactly one.
+
+<Tabs items={["Build from Source", "Pre-built Image"]}>
+<Tab value="Build from Source">
+
+Use `build` when you have source code with a Dockerfile:
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    build:
+      source: ./worker
+      dockerfile: Dockerfile.prod    # Optional, defaults to "Dockerfile"
+      args:
+        NODE_ENV: production
+    ports: [8080]
+```
+
+</Tab>
+<Tab value="Pre-built Image">
+
+Use `image` when you want to deploy an existing container image:
+
+```yaml title="hostess.yml"
+services:
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports: [9000, 9001]
+```
+
+The image must be a fully qualified reference including the registry (if not Docker Hub), repository, and tag.
+
+**Common image sources:**
+
+```yaml title="Docker Hub"
+image: nginx:1.25
+```
+
+```yaml title="GitHub Container Registry"
+image: ghcr.io/myorg/my-service:v1.2.3
+```
+
+For private images, prefer `build` so registry authentication stays inside the build pipeline.
+
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+You cannot specify both `build` and `image`. Choose one. If you are building from source, use `build`. If you are using a pre-built container, use `image`.
+</Callout>
+
+---
+
+## Command Override
+
+The `command` field overrides the image's default CMD. Use `entrypoint` only when you need to replace the image entrypoint itself. This is useful when multiple services share the same image or source but start different processes.
+
+### String Form
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: "celery -A app.celery worker --loglevel=info"
+```
+
+### Array Form (Recommended)
+
+The array form is recommended because it avoids shell interpretation issues:
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker", "--loglevel=info"]
+```
+
+### Common Pattern: Shared Codebase, Different Commands
+
+A common pattern is to use the same codebase for multiple services, each with a different command:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    # Uses the default CMD from Dockerfile (uvicorn)
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker", "--loglevel=info"]
+
+  beat:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "beat", "--loglevel=info"]
+```
+
+All three services can share the same source directory and Dockerfile. Hostess builds each service under its own service name, and the `command` field on `worker` and `beat` replaces the default `CMD` so they start Celery instead of Uvicorn.
+
+---
+
+## Multi-Port Services
+
+Some applications expose multiple ports — for example, MinIO exposes an S3 API on port 9000 and a web console on port 9001. List all ports in the `ports` field. Set `public: true` when those ports should receive public URLs:
+
+```yaml title="hostess.yml"
+services:
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    public: true
+    ports: [9000, 9001]
+```
+
+Each public port gets its own external URL:
+
+```
+Port 1 (9000): https://my-app-minio-p4k8n7v2.hostess.run
+Port 2 (9001): https://my-app-minio-p4k8n7v2-2.hostess.run
+```
+
+Other services can reference specific ports using magic variables:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      S3_ENDPOINT: ${minio.port_1.url}
+      # Private URL for the S3 API port
+
+      MINIO_CONSOLE: ${minio.port_2.external_url}
+      # Public URL for the console port
+    depends_on:
+      - minio
+
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    public: true
+    ports: [9000, 9001]
+```
+
+The first port in the list is the primary port (`port_1`). It is also accessible via the base variables `${minio.url}` and `${minio.external_url}` (without the `port_N` prefix) when the service is public.
+
+---
+
+## Retention
+
+For stateful custom services that store data on disk (like MinIO, MongoDB, n8n local files, or any service with durable storage), use `retention: permanent` for a default `/data` mount, or `persistence` for explicit durable directories:
+
+```yaml title="hostess.yml"
+services:
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports: [9000, 9001]
+    retention: permanent
+```
+
+| Value | Description |
+|---|---|
+| `permanent` | Data persists across deployments. Use for stateful services in production. |
+| `ephemeral` | Data is deleted when the deployment is destroyed. Use for preview environments. |
+
+```yaml title="Explicit persistent mount"
+services:
+  n8n:
+    type: custom
+    image: docker.n8n.io/n8nio/n8n:stable
+    ports: [5678]
+    persistence:
+      mount: /home/node/.n8n
+      size: 10Gi
+      owner: "1000:1000"
+```
+
+<Callout type="warn">
+`resources.storage` is only for managed database services. On `custom` services, set per-mount storage with `persistence.size`.
+</Callout>
+
+---
+
+## Health Checks
+
+Custom services have no default health check. For production workloads, you should configure one. There are two options:
+
+<Tabs items={["HTTP Health Check", "Command Health Check"]}>
+<Tab value="HTTP Health Check">
+
+For services that expose an HTTP endpoint:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: custom
+    build:
+      source: ./backend
+    ports: [8080]
+    health:
+      http: /healthz
+      interval: 15s
+      timeout: 3s
+      retries: 3
+```
+
+</Tab>
+<Tab value="Command Health Check">
+
+For services without an HTTP endpoint (workers, queue consumers, etc.):
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker"]
+    health:
+      command: "celery -A app.celery inspect ping"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+</Tab>
+</Tabs>
+
+### Health Check Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `http` | string | - | HTTP path for health checks (e.g., `/health`). |
+| `command` | string | - | Command to run inside the service. Exit code 0 = healthy. |
+| `interval` | string | `30s` | How often to run the check. |
+| `timeout` | string | `5s` | Maximum time to wait for a response. |
+| `retries` | number | `3` | Number of consecutive failures before marking unhealthy. |
+
+---
+
+## Custom Backups
+
+Custom services can define backup commands for services that store data but are not managed by Hostess (e.g., a self-managed MongoDB, Elasticsearch, etc.):
+
+```yaml title="hostess.yml"
+services:
+  my-mongo:
+    type: custom
+    image: mongo:7
+    ports: [27017]
+    retention: permanent
+    persistence:
+      mount: /data/db
+      size: 100Gi
+    backups:
+      schedule: daily
+      retention: 7
+      command: ["mongodump", "--archive=/backup/dump.gz", "--gzip"]
+      restore_command: ["mongorestore", "--drop", "--archive=/backup/dump.gz", "--gzip"]
+```
+
+### Custom Backup Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `schedule` | string | **Yes** | `daily`, `weekly`, `biweekly`, `monthly`, or a 5-field cron expression. |
+| `retention` | number | No | Number of backups to keep. Default: `7`. Must be between 1 and 365. |
+| `command` | array | **Yes** | The backup command. Must write output to `/backup/`. |
+| `restore_command` | array | No | The restore command. If omitted, automated restore is disabled. |
+
+<Callout type="warn">
+The `command` field is **required** for custom service backups. Your backup command must write its output to the `/backup/` directory. Hostess provides this directory and handles storage and rotation automatically.
+</Callout>
+
+---
+
+## Examples
+
+### Celery Worker
+
+A background task worker sharing a codebase with a FastAPI API:
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker", "--loglevel=info", "--concurrency=4"]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+    replicas: 3
+    resources: medium
+    health:
+      command: "celery -A app.celery inspect ping"
+
+  database:
+    type: postgres
+
+  cache:
+    type: redis
+```
+
+### MinIO Object Storage
+
+A self-hosted S3-compatible object storage service:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: object-storage
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      S3_ENDPOINT: ${minio.port_1.url}
+      S3_EXTERNAL_URL: ${minio.port_1.external_url}
+      MINIO_CONSOLE_URL: ${minio.port_2.external_url}
+      MINIO_ROOT_USER: ${secret:MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${secret:MINIO_ROOT_PASSWORD}
+    depends_on:
+      - minio
+
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports: [9000, 9001]
+    public: true
+    env:
+      MINIO_ROOT_USER: ${secret:MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${secret:MINIO_ROOT_PASSWORD}
+    resources:
+      preset: large
+    retention: permanent
+```
+
+### Nginx Reverse Proxy
+
+An Nginx reverse proxy in front of multiple backend services:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: proxy-setup
+
+services:
+  proxy:
+    type: custom
+    image: nginx:1.25-alpine
+    ports: [80]
+    health:
+      http: /health
+      interval: 10s
+    domains:
+      - myapp.com
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+
+  database:
+    type: postgres
+```
+
+### ML Inference Service
+
+A custom ML model inference server with high resource requirements:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: ml-platform
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./api
+    env:
+      DATABASE_URL: ${database.url}
+      MODEL_SERVICE_URL: ${inference.url}
+    depends_on:
+      - database
+      - inference
+    domains:
+      - api.mlplatform.com
+
+  inference:
+    type: custom
+    build:
+      source: ./ml
+      dockerfile: Dockerfile.gpu
+    ports: [8080]
+    env:
+      MODEL_PATH: /models/v2
+      BATCH_SIZE: "32"
+    resources:
+      cpu: 4.0
+      memory: 16Gi
+    replicas:
+      min: 1
+      max: 5
+      target_cpu: 60
+    health:
+      http: /health
+      interval: 30s
+      timeout: 10s
+
+  database:
+    type: postgres
+    resources: large
+```
+
+### Go API Service
+
+A Go (Golang) HTTP service:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: go-api
+
+services:
+  api:
+    type: custom
+    build:
+      source: .
+    ports: [8080]
+    env:
+      DATABASE_URL: ${database.url}
+      PORT: "8080"
+    depends_on:
+      - database
+    health:
+      http: /health
+      interval: 15s
+    replicas:
+      min: 2
+      max: 10
+    resources: medium
+    domains:
+      - api.myapp.com
+
+  database:
+    type: postgres
+    resources: medium
+    backups: daily
+```
+
+With a corresponding Dockerfile:
+
+```dockerfile title="Dockerfile"
+FROM golang:1.22-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o server ./cmd/api
+
+FROM alpine:3.19
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=builder /app/server .
+EXPOSE 8080
+CMD ["./server"]
+```
+
+### Express.js Application
+
+A Node.js Express application:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: express-app
+
+services:
+  api:
+    type: custom
+    build:
+      source: .
+    ports: [3000]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+      NODE_ENV: production
+    depends_on:
+      - database
+      - cache
+    health:
+      http: /health
+      interval: 15s
+    replicas:
+      min: 2
+      max: 8
+    domains:
+      - api.myapp.com
+
+  database:
+    type: postgres
+
+  cache:
+    type: redis
+```

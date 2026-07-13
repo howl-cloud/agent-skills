@@ -1,0 +1,238 @@
+---
+title: Deploy an Open LLM
+description: Deploy the maintained Open WebUI and llama.cpp example from howl-cloud/awesome-hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This guide deploys the Open WebUI + llama.cpp stack from the maintained [`howl-cloud/awesome-hostess`](https://github.com/howl-cloud/awesome-hostess) examples repo. Clone the example, add the one required WebUI secret, validate it, and deploy.
+
+## What You'll Deploy
+
+The `awesome-hostess/open-webui-llama` module contains the Hostess deployment config, a local Compose mirror, and a short README:
+
+<Files>
+  <Folder name="open-webui-llama" defaultOpen>
+    <File name="hostess.yml" />
+    <File name="docker-compose.yml" />
+    <File name="README.md" />
+  </Folder>
+</Files>
+
+| Service | Role |
+|---------|------|
+| `db` | Hostess-managed Postgres database for Open WebUI data |
+| `llama` | Private CPU-only llama.cpp OpenAI-compatible model server |
+| `webui` | Public Open WebUI app connected to the private model server |
+
+The public service is `webui`. Postgres and the llama.cpp server stay private inside the deployment network.
+
+<Callout type="info">
+  This example intentionally runs a CPU-only `gguf-org/gemma-4-e2b-it-gguf:Q4_0` model through `ghcr.io/ggml-org/llama.cpp:server`. GPU resource requests are not part of this example.
+</Callout>
+
+## Prerequisites
+
+- Hostess CLI installed and authenticated with `hostess login`
+- `openssl`
+
+<Steps>
+
+<Step>
+### Clone the example module
+
+Clone the examples repo and move into the Open WebUI + llama.cpp module:
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/open-webui-llama
+```
+
+All commands in the rest of this guide run from `awesome-hostess/open-webui-llama`.
+</Step>
+
+<Step>
+### Create the WebUI secret
+
+Open WebUI uses `WEBUI_SECRET_KEY` to sign and protect application state. Generate one strong value before deploying:
+
+```bash title="Terminal"
+hostess secrets add WEBUI_SECRET_KEY --value "$(openssl rand -base64 32)"
+```
+
+<Callout type="warn">
+  Keep this value stable across redeploys. Rotating it can invalidate existing WebUI sessions and signed state.
+</Callout>
+</Step>
+
+<Step>
+### Validate the module
+
+Validate the maintained `hostess.yml` before deploying:
+
+```bash title="Terminal"
+hostess validate
+```
+
+You should see:
+
+```text
+✓ Configuration is valid
+```
+
+If you want to compare the local Compose mirror too:
+
+```bash title="Terminal"
+docker compose config --quiet
+```
+</Step>
+
+<Step>
+### Deploy the stack
+
+Deploy from the module directory:
+
+```bash title="Terminal"
+hostess deploy --env preview
+```
+
+If this is your first deployment from this directory, Hostess prompts you to create a project. The deployment output includes the public `webui` URL:
+
+```text
+✓ Deployment complete
+
+  webui: https://open-webui-llama-webui-abc123.hostess.run
+```
+</Step>
+
+<Step>
+### Open Open WebUI
+
+Open the `webui` URL from the deployment output:
+
+```text
+https://open-webui-llama-webui-abc123.hostess.run
+```
+
+The maintained example disables WebUI auth and signup for a simple demo deployment. The WebUI is preconfigured to call the private llama.cpp server through its OpenAI-compatible `/v1` API.
+</Step>
+
+<Step>
+### Smoke-test the deployment
+
+Check the public WebUI health endpoint:
+
+```bash title="Terminal"
+curl https://open-webui-llama-webui-abc123.hostess.run/health
+```
+
+Then open the WebUI and send a short prompt. The browser talks to `webui`, and `webui` sends model requests to the private `llama` service through `${llama.url}/v1`.
+</Step>
+
+</Steps>
+
+## Hostess Configuration Highlights
+
+The maintained `hostess.yml` wires Open WebUI to Hostess-managed Postgres and the private llama.cpp server:
+
+```yaml title="hostess.yml excerpt"
+services:
+  db:
+    type: postgres
+    retention: permanent
+    resources:
+      preset: medium
+      storage: 50Gi
+    backups:
+      schedule: daily
+      retention: 14
+
+  llama:
+    type: custom
+    image: ghcr.io/ggml-org/llama.cpp:server
+    retention: permanent
+    ports:
+      - 8080
+    resources: xlarge
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --hf-repo
+      - gguf-org/gemma-4-e2b-it-gguf:Q4_0
+      - --no-mmproj
+      - --parallel
+      - "1"
+    health:
+      http: /health
+
+  webui:
+    type: custom
+    image: ghcr.io/open-webui/open-webui:main
+    depends_on:
+      - db
+      - llama
+    retention: permanent
+    ports:
+      - port: 8080
+        public: true
+    resources: medium
+    health:
+      http: /health
+    env:
+      WEBUI_URL: ${webui.external_url}
+      WEBUI_SECRET_KEY: ${secret:WEBUI_SECRET_KEY}
+      DATABASE_URL: ${db.url}
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URL: ${llama.url}/v1
+      OPENAI_API_KEY: hostess-local-llama
+```
+
+Use `${llama.url}` for internal service-to-service traffic. The model server is not public.
+
+## Run It Locally With Compose
+
+The example includes a local Compose mirror:
+
+```bash title="Terminal"
+docker compose up
+```
+
+The local Open WebUI app listens on `http://localhost:3000`. The local llama.cpp API listens on `http://localhost:8081`.
+
+## Updating The Stack
+
+Because this guide uses `howl-cloud/awesome-hostess`, stack updates come from the examples repo:
+
+```bash title="Terminal"
+cd awesome-hostess
+git pull
+cd open-webui-llama
+hostess validate
+hostess deploy --env preview
+```
+
+For changes that only affect the WebUI, deploy that service:
+
+```bash title="Terminal"
+hostess deploy --env preview -s webui
+```
+
+For model, database, persistence, or dependency changes, redeploy the full stack.
+
+## Notes
+
+- `WEBUI_SECRET_KEY` is the only required user-provided secret in the maintained example.
+- `llama` uses `resources: xlarge` and can take longer to become healthy while the model server initializes.
+- `OFFLINE_MODE`, `HF_HUB_OFFLINE`, and model auto-update settings are configured to avoid runtime model downloads by Open WebUI.
+- `WEBUI_AUTH` and `ENABLE_SIGNUP` are set to `false` in the example. Review those settings before exposing a production deployment.
+
+## What's Next
+
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** - Rotate and scope the WebUI secret safely
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** - Put your own domain in front of Open WebUI
+- **[Connect to Services](https://docs.hostess.sh/docs/guides/connect-to-services)** - Debug private services from your machine
+

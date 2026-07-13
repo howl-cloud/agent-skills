@@ -1,0 +1,623 @@
+---
+title: Redis
+description: Deploy fully managed Redis instances on Hostess for caching, session storage, task queues, and real-time features.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+The `redis` service type provisions a fully managed Redis instance. Like PostgreSQL, Redis is a managed service — you do not need to provide a Dockerfile or build configuration. Hostess handles provisioning, configuration, and connection management for you.
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+```
+
+That is the simplest possible Redis service. Hostess provisions a Redis instance with `medium` resources (1 CPU, 1Gi memory) and makes it available to other services via magic variables.
+
+### Defaults
+
+When you use `type: redis`, Hostess applies the following defaults:
+
+| Setting | Default Value |
+|---|---|
+| Port | `6379` |
+| Health check | Built-in Redis ping |
+| Resources | `medium` (1 CPU, 1Gi memory) |
+| Retention | `ephemeral` |
+| Backups | Not configured (must be explicitly enabled) |
+
+---
+
+## Resource Presets and Storage
+
+Redis instances need CPU and memory for runtime. Since Redis holds data in memory, the memory allocation is particularly important — it directly determines how much data your Redis instance can store. Storage applies when you set `retention: permanent`.
+
+<Tabs items={["Preset", "Preset + Custom Storage", "Explicit"]}>
+<Tab value="Preset">
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+    resources: medium
+```
+
+| Preset | CPU | Memory | Persistent Storage |
+|---|---|---|---|
+| `small` | 0.5 cores | 512Mi | 10Gi |
+| `medium` | 1.0 cores | 1Gi | 20Gi |
+| `large` | 2.0 cores | 2Gi | 50Gi |
+| `xlarge` | 4.0 cores | 4Gi | 100Gi |
+
+</Tab>
+<Tab value="Preset + Custom Storage">
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+    resources:
+      preset: large
+      storage: 100Gi
+```
+
+</Tab>
+<Tab value="Explicit">
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+    resources:
+      cpu: 1.0
+      memory: 2Gi
+      storage: 20Gi
+```
+
+</Tab>
+</Tabs>
+
+### Choosing the Right Resources
+
+| Use Case | Recommended Preset | Notes |
+|---|---|---|
+| Development and testing | `small` | 512Mi is enough for light caching |
+| Session storage | `small` or `medium` | Sessions are typically small; scale by user count |
+| Application caching | `medium` | 1Gi covers most cache workloads |
+| Task queue (Celery) | `medium` | Queue messages are small; throughput matters more than memory |
+| Real-time features | `large` | Pub/Sub and Streams benefit from more CPU and memory |
+| Large dataset | `xlarge` | When you need to store significant amounts of data in-memory |
+
+---
+
+## Retention Policy
+
+Redis data is temporary by default. Set `retention: permanent` when Redis should keep data across deploys and redeploys:
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+    retention: permanent
+```
+
+| Value | Description |
+|---|---|
+| `permanent` | Data persists across deployments and redeploys. Redis data is preserved. |
+| `ephemeral` | Data is deleted when the deployment is destroyed. |
+
+For Redis used as a cache, `ephemeral` may be acceptable even in production since the data can be regenerated. However, if Redis is used for session storage, task queues, or as a primary data store, use `permanent`.
+
+---
+
+## Version and Memory Policy
+
+The `special` block configures Redis-specific options:
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+    special:
+      version: "8"                   # Redis version (e.g. "8" or "8.2")
+      maxmemory_percent: 75          # cap memory at 75% of the service's limit
+      maxmemory_policy: allkeys-lru  # evict least-recently-used keys at the cap
+```
+
+| Field | Description |
+|---|---|
+| `version` | Redis version to run |
+| `maxmemory` | Explicit memory cap as a quantity, e.g. `256Mi` or `1Gi` |
+| `maxmemory_percent` | Memory cap as a percent (1–100) of the service's memory limit — use instead of `maxmemory` |
+| `maxmemory_policy` | What happens at the cap: `noeviction` (default, writes fail), `allkeys-lru`, `allkeys-lfu`, `volatile-lru`, `volatile-lfu`, `allkeys-random`, `volatile-random`, `volatile-ttl` |
+
+<Callout type="info">
+For a cache, set `maxmemory_percent: 75` with `allkeys-lru` so Redis evicts
+cold keys instead of failing writes when memory fills up. The 25% headroom
+covers replication and persistence overhead.
+</Callout>
+
+---
+
+## Connecting from Other Services
+
+Other services connect to your Redis instance using magic variables. Hostess automatically constructs connection URLs for you.
+
+### Magic Variables
+
+When you define a `type: redis` service, the following magic variables become available to any service that references it:
+
+| Variable | Description |
+|---|---|
+| `${cache.url}` | Private Redis connection URL with password and database number |
+| `${cache.external_url}` | Public TLS connection URL with password |
+| `${cache.host}` | Private Redis hostname |
+| `${cache.external_host}` | Public (branded) hostname |
+| `${cache.port}` | Redis port number |
+| `${cache.password}` | Redis password |
+
+<Callout type="info">
+Replace `cache` with your actual service name. If your service is called `redis`, use `${redis.url}`. If it is called `queue`, use `${queue.url}`.
+</Callout>
+
+### Basic Connection Example
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - cache
+
+  cache:
+    type: redis
+    resources: small
+```
+
+The `${cache.url}` magic variable resolves to a password-protected Redis connection string. Use split variables when a framework expects host, port, and password separately:
+
+```yaml title="hostess.yml"
+env:
+  REDIS_HOST: ${cache.host}
+  REDIS_PORT: ${cache.port}
+  REDIS_PASSWORD: ${cache.password}
+```
+
+---
+
+## Local Access
+
+To connect to your Redis instance from your local machine, use the `hostess connect` command:
+
+```bash title="Terminal"
+hostess connect cache
+```
+
+This establishes a secure tunnel to your Redis instance and prints `redis-cli` commands you can run in another terminal. You can also choose the local port for use with GUI tools like RedisInsight:
+
+```bash title="Terminal"
+hostess connect cache --local-port 6379
+```
+
+Then connect your Redis client to `localhost:6379`.
+
+See the [CLI connect reference](https://docs.hostess.sh/docs/cli/connect) for all available options.
+
+---
+
+## Public Access
+
+You can connect to your managed Redis instance securely from outside the Hostess platform using a TLS-enabled public `redis.hostess.run` endpoint. The public connection string for your Redis service is available as `${cache.external_url}`:
+
+```
+rediss://my-app-cache-p2x8k4n7.default:****@redis.hostess.run:6379/0
+```
+
+- The `rediss://` scheme means the connection is **TLS-encrypted**.
+- This works with a plain copy-paste URL in every major Redis client.
+
+```bash title="Terminal"
+redis-cli --tls -u 'rediss://my-app-cache-p2x8k4n7.default:****@redis.hostess.run:6379/0'
+```
+
+```ts title="ioredis"
+import Redis from "ioredis";
+const redis = new Redis(process.env.REDIS_EXTERNAL_URL); // ${cache.external_url}
+```
+
+```python title="redis-py"
+import os, redis
+r = redis.from_url(os.environ["REDIS_EXTERNAL_URL"])
+```
+
+The Hostess CLI (`hostess ps`) and the Studio Redis dashboard both surface this string.
+
+<Callout type="info">
+Use `${cache.external_url}` for clients **outside** the Hostess network. Inside the Hostess network, service-to-service traffic should use the internal `${cache.url}`.
+</Callout>
+
+---
+
+## Common Patterns
+
+### Caching
+
+The most common use case for Redis — cache frequently accessed data to reduce database load and improve response times:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+
+  database:
+    type: postgres
+    resources: medium
+
+  cache:
+    type: redis
+    resources: small
+```
+
+In your application:
+
+```python title="app/cache.py"
+import redis.asyncio as redis
+from app.config import settings
+
+cache = redis.from_url(settings.redis_url)
+
+async def get_user(user_id: str):
+    # Check cache first
+    cached = await cache.get(f"user:{user_id}")
+    if cached:
+        return json.loads(cached)
+
+    # Fetch from database, cache the result
+    user = await db.get_user(user_id)
+    await cache.set(f"user:{user_id}", json.dumps(user), ex=3600)  # 1 hour TTL
+    return user
+```
+
+### Session Storage
+
+Store user sessions in Redis for fast access and automatic expiration:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      SESSION_STORE_URL: ${sessions.url}
+    depends_on:
+      - database
+      - sessions
+
+  database:
+    type: postgres
+
+  sessions:
+    type: redis
+    resources: small
+    retention: permanent
+```
+
+### Task Queue with Celery
+
+Use Redis as a message broker for Celery task queues:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      CELERY_BROKER_URL: ${queue.url}
+      CELERY_RESULT_BACKEND: ${queue.url}
+    depends_on:
+      - database
+      - queue
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker", "--loglevel=info"]
+    env:
+      DATABASE_URL: ${database.url}
+      CELERY_BROKER_URL: ${queue.url}
+      CELERY_RESULT_BACKEND: ${queue.url}
+    depends_on:
+      - database
+      - queue
+    replicas: 3
+
+  database:
+    type: postgres
+    resources: medium
+
+  queue:
+    type: redis
+    resources: medium
+```
+
+### Separate Cache and Queue
+
+For applications that use Redis for both caching and task queues, consider using separate Redis instances to isolate concerns:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      CACHE_URL: ${cache.url}
+      CELERY_BROKER_URL: ${queue.url}
+    depends_on:
+      - database
+      - cache
+      - queue
+
+  cache:
+    type: redis
+    resources: small
+
+  queue:
+    type: redis
+    resources: medium
+```
+
+Alternatively, use scoped databases (see below) to isolate workloads within a single Redis instance.
+
+---
+
+## Scoped Databases
+
+By default, all services that reference a Redis instance share the same keyspace (Redis database 0). If you need isolation between services or workloads, use scoped databases.
+
+Redis scoped databases map to Redis numbered databases (0 through 15). Each group gets its own numbered database, so keys in one group do not collide with keys in another.
+
+### Explicit Group Map
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      REDIS_URL: ${redis.url}
+    depends_on:
+      - redis
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker"]
+    env:
+      CELERY_BROKER_URL: ${redis.url}
+    depends_on:
+      - redis
+
+  auth-service:
+    type: fastapi
+    build:
+      source: ./services/auth
+    env:
+      SESSION_URL: ${redis.url}
+    depends_on:
+      - redis
+
+  redis:
+    type: redis
+    databases:
+      cache: [api]             # Redis database 0
+      queue: [worker]          # Redis database 1
+      sessions: [auth-service] # Redis database 2
+```
+
+In this setup, each group gets a different Redis database number in its connection URL. The `api` service uses database 0, the `worker` service uses database 1, and `auth-service` uses database 2.
+
+### Per-Service Sugar
+
+If every consuming service should get its own isolated Redis database:
+
+```yaml title="hostess.yml"
+services:
+  redis:
+    type: redis
+    databases: per_service
+```
+
+### Scoped Database Rules
+
+- A service that references `${<redis>.url}` must belong to exactly one group
+- A service cannot appear in multiple groups for the same Redis instance
+- Group names must be DNS-safe and cannot be `default`
+
+<Callout type="warn">
+Redis supports a maximum of **16 database groups** (numbered 0 through 15). If you define more than 16 groups, validation will fail.
+</Callout>
+
+### Per-Group Credentials
+
+Each group gets its own Redis user and password instead of one shared
+password. Connection URLs authenticate as the group's user automatically, and
+`${redis.password}` resolves to that user's password for each consumer — so
+credentials can be rotated or revoked per group without touching the others.
+
+---
+
+## Working with Redis in Studio
+
+Every Redis service gets a full set of tools in Studio:
+
+- **Keys** — browse, search, create, edit, and delete keys, including JSON and
+  time-series values. Click a key's TTL to change or remove its expiry.
+- **CLI** — run Redis commands interactively.
+- **Memory** — memory usage, fragmentation, and the active eviction policy.
+- **Metrics** — live throughput, clients, and keyspace stats, plus historical
+  charts (memory, operations per second, hit rate, clients) over 1h/6h/24h/7d
+  ranges.
+- **Backups** — backup history, manual backups, and restores.
+
+---
+
+## Backups
+
+Redis supports automatic scheduled backups:
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+    backups: daily
+```
+
+For more control:
+
+```yaml title="hostess.yml"
+services:
+  cache:
+    type: redis
+    backups:
+      schedule: daily
+      retention: 14
+```
+
+See the [PostgreSQL backups section](https://docs.hostess.sh/docs/service-types/postgres#backups) for details on schedule presets and cron expressions — the configuration is identical.
+
+Restore from the Studio Backups tab requires `retention: permanent`. Hostess takes a safety backup, then recreates the Redis instance from the selected snapshot.
+
+When you set `replicas: 3` or higher, Hostess runs Redis in highly available mode with automatic failover.
+
+---
+
+## Complete Examples
+
+### Simple Cache
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: .
+    env:
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - cache
+
+  cache:
+    type: redis
+```
+
+### Production Redis with Backups
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-app
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+
+  database:
+    type: postgres
+    resources: large
+    backups: daily
+
+  cache:
+    type: redis
+    resources: medium
+    retention: permanent
+    backups:
+      schedule: daily
+      retention: 7
+```
+
+### Scoped Redis for Multi-Workload
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: multi-workload
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      CACHE_URL: ${redis.url}
+    depends_on:
+      - database
+      - redis
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker"]
+    env:
+      DATABASE_URL: ${database.url}
+      CELERY_BROKER_URL: ${redis.url}
+    depends_on:
+      - database
+      - redis
+    replicas: 3
+
+  auth-service:
+    type: fastapi
+    build:
+      source: ./services/auth
+    env:
+      DATABASE_URL: ${database.url}
+      SESSION_URL: ${redis.url}
+    depends_on:
+      - database
+      - redis
+
+  database:
+    type: postgres
+    resources: large
+
+  redis:
+    type: redis
+    resources: medium
+    databases:
+      cache: [api]
+      queue: [worker]
+      sessions: [auth-service]
+```

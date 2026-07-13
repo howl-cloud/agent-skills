@@ -1,0 +1,149 @@
+---
+title: AI Agents
+description: Use Hostess directly from Claude Code, Codex, Cursor, and other agents
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+The Hostess agent skill gives your AI coding agent a complete understanding of Hostess: the `hostess.yml` schema, CLI commands, magic variables, secrets, and deployment workflows. 
+
+You can ask your agent to scaffold a `hostess.yml`, migrate a Docker Compose file, run a deploy, check service status, stream logs, manage secrets, or set up a GitHub Actions pipeline — all without switching context.
+
+---
+
+## Agent Skill
+
+Install the Hostess agent skill with the CLI:
+
+```bash title="Terminal"
+hostess skills install
+```
+
+That installs the skill for the **current project**. For a user-level install that applies across all projects:
+
+```bash title="Terminal"
+hostess skills install -g
+```
+
+| Command | Scope | What it does |
+|---|---|---|
+| `hostess skills install` | Project | Install the skill into detected agents for this repo |
+| `hostess skills install -g` | Global | Install for your user account across projects |
+| `hostess skills update` | Project | Pull the latest skill content |
+| `hostess skills update -g` | Global | Update the global install |
+| `hostess skills uninstall` | Project | Remove the project install |
+| `hostess skills uninstall -g` | Global | Remove the global install |
+| `hostess skills list` | — | Show detected Hostess skill installs |
+
+Use `--agent <name>` on install or uninstall to target a single agent (for example `claude-code`, `codex`, or `cursor`).
+
+### Other agents / advanced
+
+You can also install via the [Skills](https://skills.sh/) CLI directly:
+
+```bash title="Terminal"
+npx skills add howl-cloud/agent-skills --skill hostess
+```
+
+Add `-g` for a global install, or `--agent claude-code` (or `codex`, `cursor`, etc.) to pin a single agent.
+
+Once installed, the skill can be used when you ask your agent about Hostess, deploying applications, writing `hostess.yml`, or choosing a deployment platform for a multi-service stack.
+
+---
+
+## Plugin
+
+The Hostess plugin is the native integration format for Claude Code, Codex, and Cursor. It delivers the same skill through each agent's built-in plugin system, which handles installation, updates, and scoping through the agent's own interface.
+
+<Tabs items={['Claude Code', 'Codex', 'Cursor']}>
+  <Tab value="Claude Code">
+    Add the Hostess marketplace, then install the plugin:
+
+    ```
+    /plugin marketplace add howl-cloud/agent-skills
+    /plugin install hostess@agent-skills
+    ```
+
+    Run `/reload-plugins` to activate. The skill is available under the `hostess` plugin.
+  </Tab>
+  <Tab value="Codex">
+    Add the marketplace from the CLI:
+
+    ```bash title="Terminal"
+    codex plugin marketplace add howl-cloud/agent-skills
+    ```
+
+    Then open the Codex plugin directory, find **Hostess**, and install.
+  </Tab>
+  <Tab value="Cursor">
+    1. Open **Settings** → **Plugins**.
+    2. Paste `https://github.com/howl-cloud/agent-skills` in the search or link field.
+    3. Select the **Hostess** plugin and click **Add to Cursor**.
+  </Tab>
+</Tabs>
+
+---
+
+## What you can ask
+
+The skill covers the full Hostess workflow. Here are some example prompts:
+
+**Getting started**
+- *"Create a `hostess.yml` for my Next.js app with a Postgres database."*
+- *"Convert my `docker-compose.yml` to a `hostess.yml`."*
+- *"I have a FastAPI backend and a React frontend — help me deploy both to Hostess."*
+
+**Deploying**
+- *"Deploy my app to the production environment."*
+- *"Set up a GitHub Actions workflow to deploy on push to main."*
+- *"Deploy only the API service without touching the database."*
+
+**Managing secrets**
+- *"Add a `STRIPE_KEY` secret scoped to production."*
+- *"Sync my `.env.production` file to Hostess secrets."*
+- *"Show me which secrets are set in production vs staging."*
+
+**Operations**
+- *"Check the status of my services."*
+- *"Stream logs from the API service."*
+- *"Connect to my production database locally."*
+- *"Run the migration job manually."*
+- *"List the last 10 backups for the database service."*
+
+**Troubleshooting**
+- *"My deploy failed — what went wrong?"*
+- *"The API service keeps restarting. Can you check the logs and help me debug it?"*
+- *"My custom domain isn't working. Walk me through the DNS setup."*
+
+---
+
+## Skills repository
+
+The skill source is at [github.com/howl-cloud/agent-skills](https://github.com/howl-cloud/agent-skills). The repository follows the [Agent Skills](https://agentskills.io/) format and is compatible with any agent that supports that standard.
+
+Keep the skill current with:
+
+```bash title="Terminal"
+hostess skills update -g
+```
+
+---
+
+## Next steps
+
+<Cards>
+  <Card title="Quick Start" href="https://docs.hostess.sh/docs/quick-start">
+    Deploy your first app to Hostess in under 5 minutes.
+  </Card>
+  <Card title="Configuration Reference" href="https://docs.hostess.sh/docs/configuration">
+    Full hostess.yml schema reference.
+  </Card>
+  <Card title="CI/CD" href="https://docs.hostess.sh/docs/ci-cd">
+    Automate deployments with GitHub Actions and other CI systems.
+  </Card>
+  <Card title="CLI Reference" href="https://docs.hostess.sh/docs/cli">
+    Every CLI command, flag, and option.
+  </Card>
+</Cards>

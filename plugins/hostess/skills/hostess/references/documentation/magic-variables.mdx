@@ -1,0 +1,512 @@
+---
+title: Magic Variables
+description: Learn how Hostess magic variables enable zero-config service discovery, automatically wiring your services together without manual URL management.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+Magic variables are Hostess's built-in service discovery system. They let your services reference each other — databases, APIs, caches, and more — without hardcoding URLs, managing environment variables manually, or writing any networking configuration.
+
+When you write `${database.url}` in your `hostess.yml`, Hostess automatically resolves it at deploy time to a fully-qualified connection URL with the correct hostname, port, credentials, and database name. Your services discover each other automatically, whether they're connecting to a Postgres database, a Redis cache, or another HTTP service.
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+    depends_on:
+      - database
+      - cache
+
+  database:
+    type: postgres
+    resources: medium
+
+  cache:
+    type: redis
+    resources: small
+```
+
+In this example, `${database.url}` and `${cache.url}` resolve to fully-qualified internal connection strings with auto-generated credentials. You never need to know or manage these values.
+
+## Syntax
+
+All magic variables use the `${reference}` syntax inside the `env` block of your service configuration:
+
+```yaml
+env:
+  KEY: ${reference}
+```
+
+The reference follows the pattern `${service_name.property}`, where `service_name` is the name of another service defined in your `hostess.yml`, and `property` is the piece of information you want (like `url`, `host`, or `port`).
+
+## Database Variables
+
+Database services (Postgres, Redis) expose a rich set of variables for connecting from other services. Hostess automatically generates secure connection credentials and constructs full connection URLs for you.
+
+### Postgres
+
+When you define a `type: postgres` service, the following magic variables become available to any service that references it:
+
+<Tabs items={["Connection URLs", "Individual Fields"]}>
+  <Tab value="Connection URLs">
+    ```yaml title="hostess.yml"
+    services:
+      api:
+        type: fastapi
+        env:
+          # Full internal connection URL — use for service-to-service connections
+          DATABASE_URL: ${database.url}
+          # → (internal connection string, managed by Hostess)
+
+          # Full external connection URL — use for external access
+          DATABASE_EXTERNAL_URL: ${database.external_url}
+          # → postgresql://postgres:pass@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
+
+      database:
+        type: postgres
+        resources: medium
+    ```
+  </Tab>
+  <Tab value="Individual Fields">
+    ```yaml title="hostess.yml"
+    services:
+      api:
+        type: fastapi
+        env:
+          # Internal hostname
+          DB_HOST: ${database.host}
+          # → (internal hostname, managed by Hostess)
+
+          # External (branded) hostname
+          DB_EXTERNAL_HOST: ${database.external_host}
+          # → my-app-database-k7xm9p2q.pg.hostess.run
+
+          # Port number
+          DB_PORT: ${database.port}
+          # → 5432
+
+          # Username
+          DB_USER: ${database.user}
+          # → postgres
+
+          # Database name
+          DB_NAME: ${database.database}
+          # → database
+
+          # Password (from auto-generated credentials)
+          DB_PASSWORD: ${database.password}
+          # → (auto-generated secure password)
+
+      database:
+        type: postgres
+        resources: medium
+    ```
+  </Tab>
+</Tabs>
+
+**Complete Postgres variable reference:**
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `${db.url}` | Internal connection URL with credentials | `(internal — managed by Hostess)` |
+| `${db.external_url}` | External connection URL with credentials | `postgresql://postgres:pass@my-app-db-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require` |
+| `${db.host}` | Internal hostname | `(internal — managed by Hostess)` |
+| `${db.external_host}` | External hostname | `my-app-db-k7xm9p2q.pg.hostess.run` |
+| `${db.port}` | Port number | `5432` |
+| `${db.user}` | Username | `postgres` |
+| `${db.database}` | Database name | `database` |
+| `${db.password}` | Auto-generated password | `(secure random string)` |
+
+<Callout type="info">
+Replace `db` with your actual service name. If your service is called `postgres`, use `${postgres.url}`. If it's called `main-db`, use `${main-db.url}`.
+</Callout>
+
+### Redis
+
+When you define a `type: redis` service, the following magic variables become available:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      # Full internal connection URL
+      REDIS_URL: ${cache.url}
+      # → (internal connection string, managed by Hostess)
+
+      # Full external connection URL
+      REDIS_EXTERNAL_URL: ${cache.external_url}
+      # → rediss://my-app-cache-p2x8k4n7.default:pass@redis.hostess.run:6379/0
+
+  cache:
+    type: redis
+    resources: small
+```
+
+**Complete Redis variable reference:**
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `${cache.url}` | Internal connection URL | `(internal — managed by Hostess)` |
+| `${cache.external_url}` | External connection URL | `rediss://my-app-cache-p2x8k4n7.default:pass@redis.hostess.run:6379/0` |
+| `${cache.host}` | Internal hostname | `(internal — managed by Hostess)` |
+| `${cache.external_host}` | External hostname | `my-app-cache-p2x8k4n7.rd.hostess.run` |
+| `${cache.port}` | Port number | `6379` |
+| `${cache.password}` | Auto-generated password | `(secure random string)` |
+
+<Callout type="info">
+Database `external_url` values are public TLS endpoints — connect from outside Hostess with no port-forward. See [Postgres → Public Access](https://docs.hostess.sh/docs/service-types/postgres#public-access) and [Redis → Public Access](https://docs.hostess.sh/docs/service-types/redis#public-access).
+</Callout>
+
+## HTTP Service Variables
+
+HTTP services (Next.js, FastAPI, custom, etc.) expose URL and host variables that other services can use to communicate with them.
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      # Browser-side API calls need the external URL
+      NEXT_PUBLIC_API_URL: ${api.external_url}
+      # → https://my-app-api-a3x9d2m1.hostess.run
+
+    depends_on:
+      - api
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      # Server-side calls use the internal URL (faster, no TLS overhead)
+      FRONTEND_URL: ${frontend.url}
+      # → (internal URL, managed by Hostess)
+```
+
+**Complete HTTP service variable reference:**
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `${svc.url}` | Internal URL (for service-to-service) | `(internal — managed by Hostess)` |
+| `${svc.external_url}` | External URL (for browsers/webhooks) | `https://my-app-backend-a3x9d2m1.hostess.run` |
+| `${svc.host}` | Internal hostname | `(internal — managed by Hostess)` |
+| `${svc.external_host}` | External hostname | `my-app-backend-a3x9d2m1.hostess.run` |
+| `${svc.port}` | Port number | `8000` |
+
+## Multi-Port Services
+
+If a service defines multiple ports, Hostess exposes port-specific variables using the `port_N` syntax. This is useful for services like MinIO that expose both an API port and a console port.
+
+```yaml title="hostess.yml"
+services:
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - 9000   # S3 API port (port_1)
+      - 9001   # Web console (port_2)
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      # Reference specific ports
+      S3_ENDPOINT: ${minio.port_1.url}
+      # → (internal URL, managed by Hostess)
+
+      S3_EXTERNAL: ${minio.port_1.external_url}
+      # → https://my-app-minio-k7xm9p2q.hostess.run
+
+      MINIO_CONSOLE: ${minio.port_2.external_url}
+      # → https://my-app-minio-k7xm9p2q-2.hostess.run
+```
+
+**Multi-port variable reference:**
+
+| Variable | Description |
+|----------|-------------|
+| `${svc.port_1.url}` | Internal URL for port 1 (primary) |
+| `${svc.port_1.external_url}` | External URL for port 1 |
+| `${svc.port_1.port}` | Port number for port 1 |
+| `${svc.port_2.url}` | Internal URL for port 2 |
+| `${svc.port_2.external_url}` | External URL for port 2 |
+| `${svc.port_N.url}` | Internal URL for port N |
+| `${svc.port_N.external_url}` | External URL for port N |
+
+<Callout type="info">
+`port_1` is always the primary port and matches the base `${service.url}` / `${service.external_url}` variables. For single-port services, you don't need the `port_N` syntax — just use `${service.url}`.
+</Callout>
+
+## Deployment Metadata
+
+Every deployment exposes metadata variables that you can use to track which version of your code is running, add to logging, or display in health check endpoints.
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      DEPLOY_ID: ${deployment.id}
+      # → abc123
+
+      ENVIRONMENT: ${deployment.environment}
+      # → production | staging | preview
+
+      VERSION: ${deployment.version}
+      # → v1.0.0
+
+      DEPLOY_TIMESTAMP: ${deployment.timestamp}
+      # → 2025-12-13T14:23:45Z
+```
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `${deployment.id}` | Unique deployment identifier | `abc123` |
+| `${deployment.environment}` | Environment name | `production` |
+| `${deployment.version}` | Hostess deployment version | `v1.0.0` |
+| `${deployment.timestamp}` | Deploy timestamp (ISO 8601) | `2025-12-13T14:23:45Z` |
+
+## Service Metadata
+
+Each service can also reference its own metadata:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      SERVICE_NAME: ${service.name}
+      # → api
+
+      SERVICE_TYPE: ${service.type}
+      # → fastapi
+```
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `${service.name}` | The service's own name | `api` |
+| `${service.type}` | The service's type | `fastapi` |
+
+## Secret References
+
+Secrets stored in the Hostess secret store are referenced with the `${secret:NAME}` syntax. Unlike other magic variables, secrets use a colon (`:`) instead of a dot (`.`) separator.
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      JWT_SECRET: ${secret:JWT_SECRET}
+      STRIPE_KEY: ${secret:STRIPE_API_KEY}
+      SENDGRID_KEY: ${secret:SENDGRID_API_KEY}
+```
+
+Secrets are encrypted at rest and injected as environment variables at deploy time. If a referenced secret does not exist, the deployment will fail with a clear error message.
+
+To manage secrets, use the Hostess CLI:
+
+```bash title="Terminal"
+# Add a secret
+hostess secrets add JWT_SECRET --value "my-secret-value"
+
+# Add a secret to specific environments
+hostess secrets add STRIPE_KEY --value "sk_live_..." --envs production
+
+# Sync from a .env file
+hostess secrets sync push --env production --file .env.production
+```
+
+See the [Secrets](https://docs.hostess.sh/docs/secrets) page for the full guide on managing secrets.
+
+## Scoped Database Variables
+
+By default, all services that reference a database share the same database and credentials. If you want service-level isolation — for example, giving your `api` and `worker` services their own Postgres databases within the same instance — you can use the `databases` configuration on your database service.
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    env:
+      DATABASE_URL: ${postgres.url}   # Resolves to the "main" group DB
+    depends_on:
+      - postgres
+
+  worker:
+    type: custom
+    image: my-worker:latest
+    env:
+      DATABASE_URL: ${postgres.url}   # Also resolves to "main" group DB
+    depends_on:
+      - postgres
+
+  scheduler:
+    type: custom
+    image: my-scheduler:latest
+    env:
+      DATABASE_URL: ${postgres.url}   # Resolves to the "analytics" group DB
+    depends_on:
+      - postgres
+
+  postgres:
+    type: postgres
+    databases:
+      main: [api, worker]         # api and worker share the "main" database
+      analytics: [scheduler]      # scheduler gets its own "analytics" database
+```
+
+When `databases` is configured:
+
+- `${postgres.url}` resolves **differently per service** based on which group the service belongs to
+- The `api` and `worker` services get a connection URL pointing to the `main` scoped database
+- The `scheduler` service gets a connection URL pointing to the `analytics` scoped database
+- `${postgres.database}` resolves to the scoped database name (e.g., `postgres__main` or `postgres__analytics`)
+
+### Per-Service Sugar
+
+If you want every consuming service to get its own isolated database, use the `per_service` shorthand:
+
+```yaml title="hostess.yml"
+services:
+  postgres:
+    type: postgres
+    databases: per_service
+```
+
+This automatically creates one database group per service that references `${postgres.url}`.
+
+### Redis Scoped Databases
+
+For Redis, scoping uses numbered databases (`/0`, `/1`, `/2`, etc.) instead of named databases:
+
+```yaml title="hostess.yml"
+services:
+  redis:
+    type: redis
+    databases:
+      cache: [api, frontend]     # → redis://....:6379/0
+      sessions: [auth]           # → redis://....:6379/1
+      queue: [worker]            # → redis://....:6379/2
+```
+
+<Callout type="warn">
+Redis supports a maximum of 16 database groups (numbered 0-15).
+</Callout>
+
+## When to Use Which URL
+
+Choosing the right URL type is important for performance and security. Here's a quick decision guide:
+
+| Scenario | Variable to Use | Why |
+|----------|----------------|-----|
+| Backend connecting to database | `${database.url}` | Stays inside the Hostess network, lowest latency |
+| Frontend SSR calling backend | `${backend.url}` | Server-side rendering runs inside Hostess |
+| Browser JavaScript calling API | `${backend.external_url}` | Client-side code needs a publicly accessible URL |
+| Webhook callback URL | `${service.external_url}` | External services (Stripe, GitHub) need to reach you from outside |
+| External connection to a database | `${database.external_url}` | Direct public TLS endpoint — reachable from anywhere, no port-forward needed |
+| Displaying a link in your UI | `${service.external_url}` | Users see the branded `hostess.run` URL |
+
+<Callout type="info">
+**Rule of thumb**: Use `url` (internal) whenever both the caller and the callee are Hostess services. Use `external_url` only when the caller is outside the Hostess network — a user's browser, an external webhook, or your local development machine.
+</Callout>
+
+## Connection Secrets
+
+For database services, URL and password-style variables are backed by Hostess-managed credentials. You do not create or rotate these credentials manually; Hostess generates and updates them during deployment.
+
+- `${database.url}` reads a fully constructed connection URL from Hostess-managed credentials.
+- `${database.password}` reads the generated database password.
+- In scoped database mode, each database group gets its own generated credentials, so `${database.url}` can resolve differently for different consuming services.
+
+Because these values contain secrets, use them as exact env values:
+
+```yaml title="hostess.yml"
+env:
+  DATABASE_URL: ${database.url}
+```
+
+Do not embed secret-backed values inside longer strings. If you need a custom full connection string, store it as a secret and reference it with `${secret:NAME}`.
+
+## Complete Example
+
+Here's a full-stack application demonstrating most magic variable types:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-saas
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      NEXT_PUBLIC_API_URL: ${api.external_url}
+      NEXT_PUBLIC_ENV: ${deployment.environment}
+    depends_on:
+      - api
+    domains:
+      - app.mysaas.com
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      FRONTEND_URL: ${frontend.external_url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+      STRIPE_KEY: ${secret:STRIPE_KEY}
+      ENVIRONMENT: ${deployment.environment}
+      SERVICE_NAME: ${service.name}
+    depends_on:
+      - database
+      - cache
+    domains:
+      - api.mysaas.com
+
+  worker:
+    type: custom
+    image: my-saas/worker:latest
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      S3_ENDPOINT: ${minio.port_1.url}
+    depends_on:
+      - database
+      - cache
+      - minio
+
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 50Gi
+
+  cache:
+    type: redis
+    resources: medium
+
+  minio:
+    type: custom
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - 9000
+      - 9001
+    resources: medium
+```

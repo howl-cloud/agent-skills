@@ -1,0 +1,249 @@
+---
+title: Deploy the n8n Stack
+description: Deploy the maintained n8n example from howl-cloud/awesome-hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This guide deploys the n8n stack from the maintained [`howl-cloud/awesome-hostess`](https://github.com/howl-cloud/awesome-hostess) examples repo. You do not need to copy a long `hostess.yml` by hand. Clone the example, create the one required n8n secret, validate it, and deploy.
+
+## What You'll Deploy
+
+The `awesome-hostess/n8n` module contains the Hostess deployment config and a short README:
+
+<Files>
+  <Folder name="n8n" defaultOpen>
+    <File name="hostess.yml" />
+    <File name="README.md" />
+  </Folder>
+</Files>
+
+| Service | Role |
+|---------|------|
+| `db` | Hostess-managed Postgres database for workflows, credentials, users, and execution history |
+| `redis` | Hostess-managed Redis used by n8n queue mode |
+| `n8n` | Public n8n editor and webhook endpoint |
+| `n8n-worker` | Private queue worker that processes workflow executions |
+
+The public service is `n8n`. It exposes the editor and webhook URLs over HTTPS. Postgres and Redis stay private inside the deployment network.
+
+<Callout type="info">
+  This example runs n8n in queue mode on Hostess. The main `n8n` service serves the UI and webhooks, while `n8n-worker` processes queued executions through Redis.
+</Callout>
+
+## Prerequisites
+
+- Hostess CLI installed and authenticated with `hostess login`
+- `openssl`
+
+<Steps>
+
+<Step>
+### Clone the example module
+
+Clone the examples repo and move into the n8n module:
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/n8n
+```
+
+All commands in the rest of this guide run from `awesome-hostess/n8n`.
+</Step>
+
+<Step>
+### Create the n8n encryption key
+
+n8n uses `N8N_ENCRYPTION_KEY` to encrypt credentials stored in Postgres. Generate one strong value and store it in Hostess before deploying:
+
+```bash title="Terminal"
+hostess secrets add N8N_ENCRYPTION_KEY --value "$(openssl rand -base64 32)"
+```
+
+<Callout type="warn">
+  Keep this value stable. If you change or lose `N8N_ENCRYPTION_KEY`, n8n can no longer decrypt credentials that were already saved in the database.
+</Callout>
+</Step>
+
+<Step>
+### Validate the module
+
+Validate the maintained `hostess.yml` before deploying:
+
+```bash title="Terminal"
+hostess validate
+```
+
+You should see:
+
+```text
+✓ Configuration is valid
+```
+</Step>
+
+<Step>
+### Deploy the stack
+
+Deploy from the module directory:
+
+```bash title="Terminal"
+hostess deploy --env preview
+```
+
+If this is your first deployment from this directory, Hostess prompts you to create a project. The deployment output includes the public `n8n` URL:
+
+```text
+✓ Deployment complete
+
+  n8n: https://n8n-hostess-n8n-abc123.hostess.run
+```
+</Step>
+
+<Step>
+### Open n8n
+
+Open the `n8n` URL from the deployment output:
+
+```text
+https://n8n-hostess-n8n-abc123.hostess.run
+```
+
+On a fresh deployment, n8n prompts you to create the owner account. After setup, you can create workflows, configure credentials, and receive webhooks at the same public host.
+</Step>
+
+<Step>
+### Smoke-test the deployment
+
+Check n8n's public health endpoint:
+
+```bash title="Terminal"
+curl https://n8n-hostess-n8n-abc123.hostess.run/healthz/readiness
+```
+
+Then create a small manual workflow in the n8n editor and run it once. The web service writes workflow state to Postgres, and queued executions are processed by `n8n-worker` through Redis.
+</Step>
+
+</Steps>
+
+## Hostess Configuration Highlights
+
+The maintained `hostess.yml` wires n8n to Hostess-managed services with magic variables:
+
+```yaml title="hostess.yml excerpt"
+services:
+  db:
+    type: postgres
+    retention: permanent
+    resources:
+      preset: medium
+      storage: 50Gi
+    backups:
+      schedule: daily
+      retention: 14
+
+  redis:
+    type: redis
+    retention: permanent
+    resources:
+      preset: small
+
+  n8n:
+    type: custom
+    image: docker.n8n.io/n8nio/n8n:stable
+    depends_on:
+      db:
+        condition: healthy
+      redis:
+        condition: healthy
+    persistence:
+      mount: /home/node/.n8n
+      size: 10Gi
+      owner: "1000:1000"
+    ports:
+      - port: 5678
+        public: true
+    resources: medium
+    health:
+      http: /healthz/readiness
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    env:
+      N8N_PORT: "5678"
+      N8N_LISTEN_ADDRESS: 0.0.0.0
+      N8N_PROTOCOL: https
+      N8N_HOST: ${n8n.external_host}
+      N8N_PROXY_HOPS: "1"
+      WEBHOOK_URL: ${n8n.external_url}
+      N8N_EDITOR_BASE_URL: ${n8n.external_url}
+
+      N8N_USER_FOLDER: /home/node/.n8n
+      N8N_ENCRYPTION_KEY: ${secret:N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_RUNNERS_ENABLED: "true"
+      EXECUTIONS_MODE: queue
+
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: ${db.host}
+      DB_POSTGRESDB_PORT: ${db.port}
+      DB_POSTGRESDB_DATABASE: ${db.database}
+      DB_POSTGRESDB_USER: ${db.user}
+      DB_POSTGRESDB_PASSWORD: ${db.password}
+      DB_POSTGRESDB_SCHEMA: public
+
+      QUEUE_BULL_REDIS_HOST: ${redis.host}
+      QUEUE_BULL_REDIS_PORT: ${redis.port}
+      QUEUE_BULL_REDIS_PASSWORD: ${redis.password}
+      QUEUE_BULL_REDIS_DB: "0"
+
+      GENERIC_TIMEZONE: UTC
+      TZ: UTC
+      N8N_METRICS: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+```
+
+The worker service uses the same database, Redis, encryption, and queue settings, then starts n8n with:
+
+```yaml
+command: ["worker"]
+```
+
+Use `${db.password}` and `${redis.password}` as exact environment values. Hostess injects them as secret-backed runtime values, so they should not be embedded inside longer connection strings.
+
+## Updating The Stack
+
+Because this guide uses `howl-cloud/awesome-hostess`, stack updates come from the examples repo:
+
+```bash title="Terminal"
+cd awesome-hostess
+git pull
+cd n8n
+hostess validate
+hostess deploy --env preview
+```
+
+For changes that only affect the n8n app processes, deploy both app services together:
+
+```bash title="Terminal"
+hostess deploy --env preview -s n8n -s n8n-worker
+```
+
+For database, Redis, persistence, backup, or dependency changes, redeploy the full stack so Hostess evaluates the managed services and dependent app services together.
+
+## Notes
+
+- `N8N_ENCRYPTION_KEY` is the only required user-provided secret in the maintained example.
+- The first n8n user is created through n8n's built-in owner setup flow and becomes the instance owner.
+- `WEBHOOK_URL` and `N8N_EDITOR_BASE_URL` use `${n8n.external_url}`, so generated webhook URLs point at the Hostess public URL.
+- `db` uses permanent Postgres storage with daily backups and 14-day retention.
+- `redis` uses permanent Redis storage because queue state should survive restarts.
+- n8n workflow credentials live in Postgres and are encrypted with `N8N_ENCRYPTION_KEY`.
+
+## What's Next
+
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** - Rotate and scope n8n secrets safely
+- **[Backups & Restore](https://docs.hostess.sh/docs/guides/backups-and-restore)** - Protect Postgres workflow and credential data
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** - Put your own domain in front of n8n
+- **[Connect to Services](https://docs.hostess.sh/docs/guides/connect-to-services)** - Debug Postgres or Redis from your machine

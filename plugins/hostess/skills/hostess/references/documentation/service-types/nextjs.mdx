@@ -1,0 +1,601 @@
+---
+title: Next.js
+description: Deploy Next.js applications with automatic build optimization, server-side rendering, and API routes on Hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+The `nextjs` service type is designed for [Next.js](https://nextjs.org) applications — the React framework for full-stack web development. When you set `type: nextjs`, Hostess automatically configures sensible defaults for port, health checks, and resource allocation, so you can get up and running with minimal configuration.
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+```
+
+That is the simplest possible Next.js service. Hostess takes care of the rest.
+
+### Defaults
+
+When you use `type: nextjs`, Hostess applies the following defaults:
+
+| Setting | Default Value |
+|---|---|
+| Port | `3000` |
+| Health check | `GET /` |
+| Resources | `medium` (1 CPU, 1Gi memory) |
+| Replicas | `1` |
+
+You can override any of these in your `hostess.yml` configuration.
+
+---
+
+## Build Setup
+
+<Callout type="info">
+Don't want to write a Dockerfile? Use [`source`](/documentation/configuration#build-configuration) and Hostess auto-detects and builds your Next.js app for you — no Dockerfile or standalone config needed. The Dockerfile setup below is for when you want full control over the build.
+</Callout>
+
+Next.js applications on Hostess run from the Docker image built for your service. The recommended setup uses **standalone output mode**, which produces a compact Node.js server that is easy to copy into a small runtime image.
+
+### Recommended Standalone Output
+
+If you use the Dockerfile below, add `output: 'standalone'` to your `next.config.ts` (or `next.config.js`):
+
+<Tabs items={["next.config.ts", "next.config.js"]}>
+<Tab value="next.config.ts">
+
+```typescript title="next.config.ts"
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  output: 'standalone',
+};
+
+export default nextConfig;
+```
+
+</Tab>
+<Tab value="next.config.js">
+
+```javascript title="next.config.js"
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'standalone',
+};
+
+module.exports = nextConfig;
+```
+
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+Keep your Next.js config and Dockerfile aligned. The recommended Dockerfile copies `.next/standalone`, so it expects standalone output to be enabled.
+</Callout>
+
+### Dockerfile
+
+You need a Dockerfile in your Next.js project directory. Here is a recommended multi-stage Dockerfile for Next.js:
+
+```dockerfile title="Dockerfile"
+FROM node:20-alpine AS base
+
+# Install dependencies
+FROM base AS deps
+WORKDIR /app
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* ./
+RUN \
+  if [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
+  elif [ -f package-lock.json ]; then npm ci; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm install --frozen-lockfile; \
+  else echo "No lockfile found." && exit 1; \
+  fi
+
+# Build the application
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN \
+  if [ -f yarn.lock ]; then yarn build; \
+  elif [ -f package-lock.json ]; then npm run build; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm build; \
+  else npm run build; \
+  fi
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+CMD ["node", "server.js"]
+```
+
+This Dockerfile:
+- Uses multi-stage builds to keep the final image small
+- Copies only the standalone output (not the full `node_modules`)
+- Runs as a non-root user for security
+- Exposes port 3000
+
+---
+
+## Environment Variables
+
+Hostess injects values from the `env` block when your application runs. That is ideal for server-side Next.js code: Server Components, Route Handlers, API routes, middleware, and server-only helpers.
+
+### Runtime Server Variables
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      DATABASE_URL: ${database.url}
+      API_SECRET: ${secret:API_SECRET}
+      API_URL: ${api.url}
+      DEPLOYMENT_ENVIRONMENT: ${deployment.environment}
+```
+
+Use runtime variables for database connections, secret keys, deployment metadata, and internal service-to-service communication.
+
+### Browser-Visible Values
+
+Variables prefixed with `NEXT_PUBLIC_` are embedded into the JavaScript bundle at **build time** and are accessible in browser-side code. They are public — anyone viewing your site can see them.
+
+Values in `env` are available at application runtime. For browser-visible constants that must be baked into the JavaScript bundle, pass literal build arguments and wire them through your Dockerfile with `ARG` / `ENV` before `npm run build`, `pnpm build`, or `yarn build`.
+
+<Callout type="warn">
+`${secret:...}` and magic variables are resolved for runtime `env`. `build.args` are passed to Docker as literal strings, so use only public literal values there.
+</Callout>
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+      args:
+        NEXT_PUBLIC_APP_ENV: production
+        NEXT_PUBLIC_POSTHOG_KEY: phc_public_project_key
+    env:
+      API_URL: ${api.url}
+      DATABASE_URL: ${database.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+      DEPLOYMENT_ENVIRONMENT: ${deployment.environment}
+    depends_on:
+      - api
+      - database
+```
+
+```dockerfile title="Dockerfile"
+ARG NEXT_PUBLIC_APP_ENV
+ARG NEXT_PUBLIC_POSTHOG_KEY
+ENV NEXT_PUBLIC_APP_ENV=$NEXT_PUBLIC_APP_ENV
+ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
+
+RUN pnpm build
+```
+
+---
+
+## Connecting to Other Services
+
+A Next.js application frequently needs to communicate with backend services and databases. Prefer server-side calls for internal services, and expose browser-facing routes through your Next.js app when the browser does not need to know the backend URL.
+
+<Callout type="info">
+Always prefer `${service.url}` over `${service.external_url}` for server-side calls. Internal URLs route traffic within the Hostess deployment — lower latency, no TLS overhead, and no public exposure of your backend services.
+</Callout>
+
+### Server-Side Rendering (SSR)
+
+When your Next.js server-side code (Server Components, Route Handlers, `getServerSideProps`) needs to call another service, use the **internal URL**. This keeps traffic inside the Hostess network for lower latency and avoids TLS overhead:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      # SSR calls the API over the internal network
+      API_URL: ${api.url}
+    depends_on:
+      - api
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+```
+
+In your Next.js code:
+
+```typescript title="app/page.tsx"
+async function getProducts() {
+  const res = await fetch(`${process.env.API_URL}/products`);
+  return res.json();
+}
+
+export default async function HomePage() {
+  const products = await getProducts();
+  return <ProductList products={products} />;
+}
+```
+
+### Client-Side (Browser) — Recommended
+
+When browser JavaScript needs to trigger backend work, route it through a Next.js Route Handler. The handler runs on the server and uses the internal Hostess URL — the browser never needs to know where your backend lives:
+
+<Callout type="info">
+This is the recommended pattern for client-side calls on Hostess. Your Next.js app acts as a proxy layer: clients call `/api/...`, and the Route Handler forwards to `${api.url}` internally. No `NEXT_PUBLIC_*` variables, no public backend exposure.
+</Callout>
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      API_URL: ${api.url}
+    depends_on:
+      - api
+```
+
+Route Handler:
+
+```typescript title="app/api/orders/route.ts"
+import { NextResponse } from 'next/server';
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  const res = await fetch(`${process.env.API_URL}/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  return NextResponse.json(await res.json(), { status: res.status });
+}
+```
+
+Client component:
+
+```tsx title="components/CreateOrder.tsx"
+'use client';
+
+export function CreateOrder() {
+  const handleSubmit = async (data: FormData) => {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    // ...
+  };
+
+  return <form onSubmit={handleSubmit}>{/* ... */}</form>;
+}
+```
+
+### Browser Calls to Public APIs — Last Resort
+
+<Callout type="warn">
+Avoid this pattern when possible. It exposes your backend publicly and requires hardcoding a URL at build time, which means a full rebuild any time that URL changes. Prefer the Route Handler proxy pattern above.
+</Callout>
+
+If your browser code must call a backend service directly (for example, a third-party API that requires browser-side requests), give that backend a custom domain and bake the public URL into the Next.js bundle as a literal build argument:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://api.myapp.com
+    env:
+      API_URL: ${api.url}
+    depends_on:
+      - api
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    domains:
+      - api.myapp.com
+```
+
+---
+
+## API Insights
+
+Every Next.js service that takes traffic through a public Hostess URL gets request volume, latency, and error-rate charts on its **Metrics** tab in [Studio](https://docs.hostess.sh/docs/studio) — no code, no configuration. For **route-level** server detail and distributed traces, add the Hostess Next.js helper.
+
+### Install
+
+```bash
+npm install @hostess/nextjs
+```
+
+### Register instrumentation
+
+Next.js loads server-side instrumentation from a single `instrumentation.ts` (or `.js`) file at the root of your project (or under `src/`). Re-export Hostess's `register` and `onRequestError` from it:
+
+```ts title="instrumentation.ts"
+export { register, onRequestError } from "@hostess/nextjs";
+```
+
+If you already have an `instrumentation.ts`, call into the Hostess hooks from your own:
+
+```ts title="instrumentation.ts"
+import { register as hostessRegister, onRequestError as hostessOnRequestError } from "@hostess/nextjs";
+
+export async function register() {
+  await hostessRegister();
+  // your own instrumentation...
+}
+
+export const onRequestError = hostessOnRequestError;
+```
+
+That's the whole integration. The helper preconfigures OpenTelemetry instrumentation and points it at Hostess automatically — you don't set any OTLP endpoints or environment variables yourself. Hostess injects everything the helper needs at deploy time.
+
+### What you get
+
+Once the helper is deployed and taking traffic, the **Metrics** tab unlocks:
+
+- **Per-route traffic, latency, and status codes** — broken down by route instead of one aggregate line.
+- **Framework version** — the exact Next.js version the running service reports.
+- **Distributed traces** — click a route to see recent sampled traces, then open one as a waterfall. Traces follow requests across services, so a call from this frontend into a FastAPI backend appears as one trace. See [Insights → Traces](https://docs.hostess.sh/docs/insights#traces).
+
+![Next.js Routes](https://docs.hostess.sh/images/studio/nextjs-routes.png)
+
+### Turning it off
+
+Insights are on by default. To disable collection for a service, set `insights: disabled`:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    insights: disabled
+```
+
+See the [Insights guide](https://docs.hostess.sh/docs/insights) for the full picture and the [Configuration Reference](https://docs.hostess.sh/docs/configuration#insights) for the field details.
+
+---
+
+## Custom Domains
+
+Custom domains let you serve your Next.js application from a branded URL like `myapp.com` instead of the auto-generated `*.hostess.run` address.
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    domains:
+      - myapp.com
+      - www.myapp.com
+```
+
+After deploying, configure DNS for each domain using the target shown by Hostess. Hostess automatically provisions TLS certificates for your custom domains via Let's Encrypt. See [Custom Domains](https://docs.hostess.sh/docs/custom-domains) for the full setup guide.
+
+---
+
+## Replicas and Autoscaling
+
+For production Next.js applications that receive significant traffic, configure multiple replicas or autoscaling to handle load:
+
+<Tabs items={["Fixed Replicas", "Autoscaling"]}>
+<Tab value="Fixed Replicas">
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    replicas: 3
+    resources: medium
+```
+
+</Tab>
+<Tab value="Autoscaling">
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    replicas:
+      min: 2
+      max: 20
+      target_cpu: 70
+    resources: medium
+```
+
+</Tab>
+</Tabs>
+
+### Recommendations
+
+- **Small projects and staging** — 1 replica with `small` or `medium` resources is sufficient.
+- **Production applications** — Start with `min: 2` for redundancy. Two replicas ensure your application stays available even if one instance is being redeployed or restarted.
+- **High-traffic applications** — Use autoscaling with `min: 2` and a `max` based on your expected peak traffic. The `target_cpu: 70` default works well for most Next.js applications.
+- **SSR-heavy applications** — If your application does extensive server-side rendering, consider `large` resources for more CPU and memory per replica.
+
+---
+
+## Health Checks
+
+By default, Hostess checks `GET /` on port 3000 to determine if your Next.js application is healthy. This works for most applications because Next.js always serves the home page.
+
+If you have a dedicated health check endpoint, you can override the default:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    health:
+      http: /api/health
+      interval: 15s
+      timeout: 3s
+      retries: 3
+```
+
+You might create a custom health check endpoint in your Next.js API routes:
+
+```typescript title="app/api/health/route.ts"
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  return NextResponse.json({ status: 'ok', timestamp: new Date().toISOString() });
+}
+```
+
+---
+
+## Lifecycle Hooks
+
+Next.js applications can use lifecycle hooks for tasks like static file collection, cache warming, or cleanup:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    lifecycle:
+      post_deploy:
+        command: ["node", "scripts/warm-cache.js"]
+        on_failure: continue
+
+      shutdown:
+        timeout: 30s
+```
+
+---
+
+## Complete Examples
+
+### Minimal Next.js Application
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  app:
+    type: nextjs
+    build:
+      source: .
+    domains:
+      - myapp.com
+```
+
+### Next.js with FastAPI Backend
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-saas
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      API_URL: ${api.url}
+    depends_on:
+      - api
+    replicas:
+      min: 2
+      max: 10
+    domains:
+      - app.mysaas.com
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+    depends_on:
+      - database
+      - cache
+    domains:
+      - api.mysaas.com
+
+  database:
+    type: postgres
+    resources: large
+
+  cache:
+    type: redis
+    resources: small
+```
+
+### Next.js with Custom Build Configuration
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: custom-nextjs
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NODE_ENV: production
+        NEXT_PUBLIC_SENTRY_DSN: https://public@sentry.example/1
+    env:
+      API_URL: ${api.url}
+      SENTRY_AUTH_TOKEN: ${secret:SENTRY_AUTH_TOKEN}
+    depends_on:
+      - api
+    resources: large
+    replicas:
+      min: 3
+      max: 25
+      target_cpu: 60
+    health:
+      http: /api/health
+      interval: 10s
+    domains:
+      - myapp.com
+      - www.myapp.com
+```
+
+<Callout type="warn">
+`${secret:...}` references are **not** resolved in `build.args`. Only literal string values are passed as Docker build arguments. Put secrets in `env` when they must be available at application runtime.
+</Callout>

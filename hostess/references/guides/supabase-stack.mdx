@@ -1,0 +1,298 @@
+---
+title: Deploy the Supabase Stack
+description: Deploy the maintained Supabase example from howl-cloud/awesome-hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This guide deploys the Supabase stack from the maintained [`howl-cloud/awesome-hostess`](https://github.com/howl-cloud/awesome-hostess) examples repo. You do not need to copy a long `hostess.yml`, write a Kong config by hand, or recreate the Supabase bootstrap SQL yourself. Clone the example, generate secrets, validate it, and deploy.
+
+## What You'll Deploy
+
+The `awesome-hostess/supabase` module contains the Hostess config, local Compose mirror, Kong routes, Postgres bootstrap SQL, Garage config, Vector config, and a starter Edge Function.
+
+<Files>
+  <Folder name="supabase" defaultOpen>
+    <File name="hostess.yml" />
+    <File name="docker-compose.yml" />
+    <File name="kong.yml" />
+    <File name="garage.toml" />
+    <Folder name="db">
+      <File name="supabase-init.sql" />
+    </Folder>
+    <Folder name="functions">
+      <Folder name="main">
+        <File name="index.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="logs">
+      <File name="vector.yml" />
+    </Folder>
+    <Folder name="utils">
+      <File name="generate-keys.sh" />
+      <File name="add-new-auth-keys.sh" />
+    </Folder>
+  </Folder>
+</Files>
+
+| Service | Role |
+|---------|------|
+| `kong` | Single public endpoint for Studio and Supabase APIs |
+| `db` | Hostess-managed Postgres database |
+| `meta` | Postgres Meta API used by Studio |
+| `rest` | PostgREST API for database tables |
+| `auth` | Supabase Auth / GoTrue |
+| `storage` | Supabase Storage API |
+| `garage` | S3-compatible object storage for Storage |
+| `imgproxy` | Image transformation service for Storage |
+| `realtime` | Supabase Realtime |
+| `functions` | Supabase Edge Runtime with a starter function |
+| `analytics` | Logflare analytics service |
+| `vector` | Vector log forwarder service |
+| `studio` | Supabase Studio dashboard, protected by HTTP Basic Auth |
+
+Kong is the public service. Studio and the API services stay private and are reached through these paths on the Kong URL:
+
+| Path | Service |
+|------|---------|
+| `/` | Studio |
+| `/auth/v1` | Auth |
+| `/rest/v1` | PostgREST |
+| `/storage/v1` | Storage |
+| `/realtime/v1` | Realtime |
+| `/functions/v1` | Edge Runtime |
+
+<Callout type="info">
+  This example is a Supabase-compatible self-hosted stack, not hosted Supabase. Auth, REST, Storage, Realtime, Studio, Functions, Analytics, imgproxy, and Garage are included.
+</Callout>
+
+## Prerequisites
+
+- Hostess CLI installed and authenticated with `hostess login`
+- `openssl`
+- Node 16+ or Docker for generating the newer Supabase key material
+- Enough local or cloud capacity for a multi-service stack
+
+<Steps>
+
+<Step>
+### Clone the example module
+
+Clone the examples repo and move into the Supabase module:
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/supabase
+```
+
+All commands in the rest of this guide run from `awesome-hostess/supabase`.
+</Step>
+
+<Step>
+### Generate Supabase secrets
+
+Generate a local `.env` file with the secrets referenced by `hostess.yml`:
+
+```bash title="Terminal"
+sh utils/generate-keys.sh | awk '/^[A-Z0-9_]+=/' > .env
+sh utils/add-new-auth-keys.sh | awk '/^[A-Z0-9_]+=/' >> .env
+
+{
+  echo "REALTIME_DB_ENC_KEY=$(openssl rand -hex 8)"
+  echo "GARAGE_RPC_SECRET=$(openssl rand -hex 32)"
+  echo "GARAGE_ADMIN_TOKEN=$(openssl rand -base64 32)"
+  echo "GARAGE_METRICS_TOKEN=$(openssl rand -base64 32)"
+  echo "SUPABASE_STORAGE_S3_ACCESS_KEY=$(openssl rand -hex 16)"
+  echo "SUPABASE_STORAGE_S3_SECRET_KEY=$(openssl rand -hex 32)"
+  echo "DASHBOARD_USERNAME=admin"
+} >> .env
+```
+
+<Callout type="warn">
+  Do not commit `.env`. It contains API keys, JWT signing material, dashboard credentials, and object-storage credentials.
+</Callout>
+
+The key scripts intentionally live in the example module:
+
+- `utils/generate-keys.sh` creates the legacy Supabase JWT secret and JWT API keys.
+- `utils/add-new-auth-keys.sh` creates the newer opaque `sb_publishable_...` and `sb_secret_...` API keys plus the JWKS values used by the self-hosted services.
+</Step>
+
+<Step>
+### Push secrets to Hostess
+
+Upload the generated `.env` values to the Hostess environment you want to deploy. For a first test deployment, `preview` is a good default:
+
+```bash title="Terminal"
+hostess secrets sync push --env preview --file .env
+```
+
+You can use `--env production` instead when you are ready to deploy a production environment.
+</Step>
+
+<Step>
+### Validate the module
+
+Validate the maintained `hostess.yml` before deploying:
+
+```bash title="Terminal"
+hostess validate
+```
+
+You should see:
+
+```text
+✓ Configuration is valid
+```
+
+If you want to compare the local Compose mirror too:
+
+```bash title="Terminal"
+docker compose config --quiet
+```
+</Step>
+
+<Step>
+### Deploy the stack
+
+Deploy from the module directory:
+
+```bash title="Terminal"
+hostess deploy --env preview
+```
+
+If this is your first deployment from this directory, Hostess prompts you to create a project. The deployment output lists every service URL. The public URL you use is the `kong` URL:
+
+```text
+✓ Deployment complete
+
+  kong: https://supabase-kong-abc123.hostess.run
+```
+
+Use the Kong URL for both Studio and the Supabase API paths.
+</Step>
+
+<Step>
+### Open Studio
+
+Open the `kong` URL in your browser:
+
+```text
+https://supabase-kong-abc123.hostess.run
+```
+
+Kong protects Studio with HTTP Basic Auth. Use:
+
+- Username: the `DASHBOARD_USERNAME` value in `.env`
+- Password: the generated `DASHBOARD_PASSWORD` value in `.env`
+
+Studio loads at `/`. API traffic goes through the same public host under paths such as `/auth/v1`, `/rest/v1`, and `/storage/v1`.
+</Step>
+
+<Step>
+### Smoke-test the APIs
+
+Load the generated keys into your shell:
+
+```bash title="Terminal"
+set -a
+. ./.env
+set +a
+
+export SUPABASE_URL="https://supabase-kong-abc123.hostess.run"
+```
+
+Check Auth:
+
+```bash title="Terminal"
+curl "$SUPABASE_URL/auth/v1/health" \
+  -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+  -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY"
+```
+
+Check PostgREST:
+
+```bash title="Terminal"
+curl "$SUPABASE_URL/rest/v1/" \
+  -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+  -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY"
+```
+
+Check the starter Edge Function:
+
+```bash title="Terminal"
+curl "$SUPABASE_URL/functions/v1/main"
+```
+
+Check Realtime health through Kong:
+
+```bash title="Terminal"
+curl "$SUPABASE_URL/realtime/v1/api/tenants/realtime-dev/health" \
+  -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+  -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY"
+```
+</Step>
+
+</Steps>
+
+## Run It Locally With Compose
+
+The same module includes a `docker-compose.yml` mirror for local testing:
+
+```bash title="Terminal"
+docker compose up
+```
+
+Kong is exposed at:
+
+```text
+http://localhost:8000
+```
+
+Use the same paths as the Hostess deployment:
+
+- `http://localhost:8000/`
+- `http://localhost:8000/auth/v1`
+- `http://localhost:8000/rest/v1`
+- `http://localhost:8000/storage/v1`
+- `http://localhost:8000/realtime/v1`
+- `http://localhost:8000/functions/v1`
+
+## Updating The Stack
+
+Because this guide uses `howl-cloud/awesome-hostess`, stack updates come from the examples repo:
+
+```bash title="Terminal"
+cd awesome-hostess
+git pull
+cd supabase
+hostess validate
+hostess deploy --env preview
+```
+
+For a gateway-only change, such as an update to `kong.yml`, deploy only Kong:
+
+```bash title="Terminal"
+hostess deploy --env preview -s kong
+```
+
+For database bootstrap changes, redeploy the full stack so the init job and dependent services are evaluated together.
+
+## Notes
+
+- Studio is served through Kong at `/` and uses HTTP Basic Auth.
+- The public API key for application clients is `SUPABASE_PUBLISHABLE_KEY`.
+- The secret API key is `SUPABASE_SECRET_KEY`; treat it like a server-side credential.
+- Legacy `ANON_KEY`, `SERVICE_ROLE_KEY`, and `JWT_SECRET` are still required by self-hosted Supabase internals.
+- Edge Functions run from the mounted `functions/main/index.ts` starter function, served by Edge Runtime. Edit the function source in your repo and redeploy to update it.
+- Garage provides the S3-compatible backend for Storage.
+- The stack connects to Hostess-managed Postgres directly.
+
+## What's Next
+
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** - Rotate generated Supabase keys and credentials
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** - Put your own domain in front of Kong
+- **[Connect to Services](https://docs.hostess.sh/docs/guides/connect-to-services)** - Debug internal services from your machine
+- **[Backups & Restore](https://docs.hostess.sh/docs/guides/backups-and-restore)** - Configure database backup and restore workflows

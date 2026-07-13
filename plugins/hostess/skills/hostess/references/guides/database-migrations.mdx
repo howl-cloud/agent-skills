@@ -1,0 +1,337 @@
+---
+title: Run Database Migrations
+description: Use lifecycle hooks to run Alembic, Prisma, Django, or Drizzle migrations on every deploy
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps, Step } from 'fumadocs-ui/components/steps'
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
+
+Database migrations update your database schema — adding tables, columns, indexes, and more — as your application evolves. Hostess can run migration commands before each deployment using **lifecycle hooks**, so schema changes can move with your application code.
+
+---
+
+## How It Works
+
+`init` and `shutdown` run inside your service container — `init` before the main process starts, `shutdown` before it is terminated.
+
+`migrate` and `post_deploy` run as separate background processes. They are submitted before your new service version is rolled out, but do not block the rollout — your service may start before they complete.
+
+| Hook | Where | When |
+|------|-------|------|
+| `init` | Inside your service container | Before the main process starts |
+| `migrate` | Separate background process | Submitted before rollout; runs concurrently |
+| `post_deploy` | Separate background process | Submitted before rollout; runs concurrently |
+| `shutdown` | Inside your service container | Before the process is terminated |
+
+<Callout type="warn">
+Because `migrate` runs concurrently with your service rollout, write migrations to be **backward-compatible** — both the old and new versions of your code should tolerate the schema during the transition.
+</Callout>
+
+---
+
+## Framework-Specific Configuration
+
+<Tabs items={["Alembic (Python)", "Prisma (Node.js)", "Django", "Drizzle (Node.js)", "Custom"]}>
+<Tab value="Alembic (Python)">
+
+[Alembic](https://alembic.sqlalchemy.org/) is the standard migration tool for SQLAlchemy-based Python applications (FastAPI, Flask, etc.).
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  database:
+    type: postgres
+    resources: medium
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    depends_on:
+      - database
+    env:
+      DATABASE_URL: ${database.url}
+    lifecycle:
+      migrate:
+        command: ["alembic", "upgrade", "head"]
+        timeout: 10m
+```
+
+**How it works**:
+- `alembic upgrade head` applies all pending migration files from your `alembic/versions/` directory
+- The `DATABASE_URL` environment variable is automatically available to the migration job
+- The migration runs from your application's build context, so your `alembic.ini` and migration files are included
+
+**Creating new migrations locally**:
+
+```bash title="Terminal"
+# Generate a new migration based on model changes
+alembic revision --autogenerate -m "add users table"
+
+# Review the generated migration file in alembic/versions/
+# Commit and deploy — Hostess runs it automatically
+```
+
+</Tab>
+<Tab value="Prisma (Node.js)">
+
+[Prisma](https://www.prisma.io/) is a popular ORM for Node.js and TypeScript applications.
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  database:
+    type: postgres
+    resources: medium
+
+  api:
+    type: custom
+    build:
+      source: ./backend
+    depends_on:
+      - database
+    env:
+      DATABASE_URL: ${database.url}
+    lifecycle:
+      migrate:
+        command: ["npx", "prisma", "migrate", "deploy"]
+        timeout: 5m
+```
+
+**How it works**:
+- `prisma migrate deploy` applies all pending migrations from your `prisma/migrations/` directory
+- This command is safe for production — it only applies existing migration files (unlike `prisma migrate dev` which also creates new ones)
+- Prisma reads `DATABASE_URL` from the environment automatically
+
+**Creating new migrations locally**:
+
+```bash title="Terminal"
+# Generate a new migration based on schema changes
+npx prisma migrate dev --name add_users_table
+
+# This creates a migration file in prisma/migrations/
+# Commit and deploy — Hostess runs it automatically
+```
+
+</Tab>
+<Tab value="Django">
+
+Django includes a built-in migration system as part of its ORM.
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  database:
+    type: postgres
+    resources: medium
+
+  web:
+    type: custom
+    build:
+      source: .
+    command: ["gunicorn", "myproject.wsgi:application", "--bind", "0.0.0.0:8000"]
+    ports: [8000]
+    depends_on:
+      - database
+    env:
+      DATABASE_URL: ${database.url}
+    lifecycle:
+      init:
+        command: ["python", "manage.py", "collectstatic", "--noinput"]
+      migrate:
+        command: ["python", "manage.py", "migrate", "--noinput"]
+        timeout: 10m
+```
+
+**How it works**:
+- `python manage.py migrate --noinput` applies all pending migrations across all Django apps
+- The `--noinput` flag prevents interactive prompts (important for automated deployments)
+- The `init` hook runs `collectstatic` before migrations — both complete before the app starts
+
+**Creating new migrations locally**:
+
+```bash title="Terminal"
+# Generate migrations for model changes
+python manage.py makemigrations
+
+# Review the generated files in your app's migrations/ directory
+# Commit and deploy — Hostess runs it automatically
+```
+
+</Tab>
+<Tab value="Drizzle (Node.js)">
+
+[Drizzle](https://orm.drizzle.team/) is a lightweight TypeScript ORM with a migration toolkit.
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  database:
+    type: postgres
+    resources: medium
+
+  api:
+    type: custom
+    build:
+      source: .
+    depends_on:
+      - database
+    env:
+      DATABASE_URL: ${database.url}
+    lifecycle:
+      migrate:
+        command: ["npx", "drizzle-kit", "migrate"]
+        timeout: 5m
+```
+
+**How it works**:
+- `npx drizzle-kit migrate` applies all pending SQL migration files from your `drizzle/` directory
+- Drizzle reads the database connection from your `drizzle.config.ts` (which should use `DATABASE_URL`)
+
+**Creating new migrations locally**:
+
+```bash title="Terminal"
+# Generate migration files from schema changes
+npx drizzle-kit generate
+
+# Review the generated SQL in drizzle/
+# Commit and deploy — Hostess runs it automatically
+```
+
+</Tab>
+<Tab value="Custom">
+
+For any other migration tool (Flyway, Liquibase, golang-migrate, etc.), provide the command directly:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: custom
+    build:
+      source: .
+    depends_on:
+      - database
+    env:
+      DATABASE_URL: ${database.url}
+    lifecycle:
+      migrate:
+        command: ["./migrate.sh"]
+        timeout: 10m
+```
+
+Or with a multi-part command:
+
+```yaml title="hostess.yml"
+lifecycle:
+  migrate:
+    command: ["sh", "-c", "migrate -path ./migrations -database $DATABASE_URL up"]
+```
+
+Make sure your migration tool and scripts are included in your Docker build context.
+
+</Tab>
+</Tabs>
+
+---
+
+## Timeout Configuration
+
+Migrations have a default timeout of **5 minutes**. For large databases or complex migrations, increase the timeout:
+
+```yaml title="hostess.yml"
+lifecycle:
+  migrate:
+    command: ["alembic", "upgrade", "head"]
+    timeout: 10m  # 10 minutes
+```
+
+Supported time formats:
+- `30s` — 30 seconds
+- `5m` — 5 minutes (default)
+- `10m` — 10 minutes
+- `1h` — 1 hour
+
+If the migration exceeds the timeout, the migration job exceeds its active deadline and is treated as failed.
+
+---
+
+## Combining Lifecycle Hooks
+
+You can use multiple lifecycle hooks together. They execute in order:
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: custom
+    build:
+      source: .
+    depends_on:
+      - database
+    env:
+      DATABASE_URL: ${database.url}
+    lifecycle:
+      init:
+        command: ["python", "manage.py", "collectstatic", "--noinput"]
+
+      migrate:
+        command: ["python", "manage.py", "migrate", "--noinput"]
+        timeout: 10m
+
+      post_deploy:
+        command: ["python", "scripts/warmup_cache.py"]
+
+      shutdown:
+        timeout: 30s
+        command: ["python", "scripts/cleanup.py"]
+```
+
+**Execution order**:
+1. `init` runs inside your service container before the main process starts (collect static files)
+2. `migrate` and `post_deploy` are submitted as background processes before the rollout — they run concurrently with the service starting
+3. `shutdown` runs inside your service container when it is being terminated
+
+---
+
+## Best Practices
+
+### Write reversible migrations
+
+Whenever possible, write migrations that can be rolled back. Most migration tools support "down" migrations:
+
+- **Alembic**: `alembic downgrade -1`
+- **Prisma**: Prisma doesn't support down migrations natively — test thoroughly before deploying
+- **Django**: `python manage.py migrate app_name 0003_previous_migration`
+- **Drizzle**: `npx drizzle-kit drop`
+
+### Test migrations on a preview environment first
+
+Before running a migration in production, deploy to a preview or staging environment:
+
+```bash title="Terminal"
+# Deploy to staging first
+hostess deploy --env staging
+
+# Verify the migration succeeded, then deploy to production
+hostess deploy --env production
+```
+
+### Avoid long-running migrations in a single step
+
+Large data migrations (e.g., backfilling millions of rows) can time out. Break them into smaller steps:
+
+1. **Schema migration**: Add the new column (fast, runs during deploy)
+2. **Data migration**: Backfill data in batches using a post-deploy script or background job
+3. **Cleanup migration**: Remove the old column once backfill is complete
+
+### Keep migration files in version control
+
+Always commit your migration files alongside the code that uses the new schema. This ensures that:
+
+- Migrations are reviewed in pull requests
+- Every deployment has the correct set of migrations
+- You can track schema changes over time

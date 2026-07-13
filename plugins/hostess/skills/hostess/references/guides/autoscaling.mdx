@@ -1,0 +1,268 @@
+---
+title: Configure Autoscaling
+description: Set up horizontal autoscaling with CPU-based targets for your services
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
+
+Autoscaling automatically adjusts the number of running instances (replicas) of your service based on CPU utilization. When traffic spikes, Hostess adds more replicas to handle the load. When traffic drops, it scales back down to save resources.
+
+This guide covers how to configure autoscaling in `hostess.yml`, choose the right settings for your service type, and understand scaling behavior.
+
+---
+
+## Fixed Replicas vs Autoscaling
+
+Hostess supports two scaling modes:
+
+| Mode | Config | Best For |
+|------|--------|----------|
+| **Fixed replicas** | `replicas: 3` | Predictable services, background workers, services with consistent load |
+| **Autoscaling** | `replicas: { min: 2, max: 10, target_cpu: 70 }` | Variable traffic, APIs, web frontends, anything with unpredictable load |
+
+**Default behavior**: If you don't specify `replicas` at all, Hostess runs **1 replica** with no autoscaling.
+
+---
+
+## Configure Fixed Replicas
+
+For services with predictable, steady load, use a fixed replica count:
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    image: myorg/worker:latest
+    replicas: 3
+```
+
+This always runs exactly 3 instances of the service, regardless of CPU usage. Fixed replicas are useful for:
+
+- Background job workers that process a queue
+- Cron-triggered services
+- Services where you want full control over instance count
+- Development and staging environments where cost matters more than elasticity
+
+---
+
+## Configure Autoscaling
+
+For services with variable traffic, configure autoscaling with minimum and maximum replica counts and a CPU target:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    replicas:
+      min: 2
+      max: 10
+      target_cpu: 70
+    resources: medium
+```
+
+### What each field means
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `min` | Minimum number of replicas. Hostess never scales below this, even at zero traffic. | `2` |
+| `max` | Maximum number of replicas. Hostess never scales above this, even under extreme load. | `10` |
+| `target_cpu` | Target average CPU utilization percentage across all replicas. | `70` |
+
+### How `target_cpu` works
+
+The `target_cpu` value is the **average CPU utilization percentage** that Hostess tries to maintain across all replicas of your service.
+
+- If the average CPU across all replicas exceeds `target_cpu`, Hostess adds more replicas
+- If the average CPU drops well below `target_cpu`, Hostess removes replicas (down to `min`)
+- The default is `70` if not specified
+
+**Example**: You have `target_cpu: 70` with 2 replicas, each using 90% CPU. The average is 90%, which exceeds 70%, so Hostess scales up to 3 (or more) replicas to bring the average down.
+
+<Callout type="info">
+Hostess manages stabilization windows and cooldown periods internally to prevent rapid scale-up/scale-down cycles (thrashing). You do not need to configure these manually.
+</Callout>
+
+---
+
+## Recommended Settings by Service Type
+
+Different service types have different scaling characteristics. Use these as starting points and adjust based on your actual traffic patterns:
+
+### API services (FastAPI, Express, Django, Flask)
+
+API services typically handle many concurrent requests and benefit from aggressive scaling:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    replicas:
+      min: 2
+      max: 10
+      target_cpu: 70
+    resources: medium
+```
+
+- **min: 2** — Always have at least 2 replicas for redundancy (if one crashes, the other handles traffic)
+- **max: 10-20** — Set based on your expected peak traffic
+- **target_cpu: 70** — Scale up before CPUs are fully saturated, leaving headroom for traffic bursts
+
+### Frontend services (Next.js, static sites)
+
+Frontends often have bursty traffic patterns (marketing launches, social media spikes):
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    replicas:
+      min: 2
+      max: 20
+      target_cpu: 60
+    resources: small
+```
+
+- **min: 2** — Redundancy for zero-downtime deploys
+- **max: 20** — Higher ceiling for traffic spikes (frontend replicas are lightweight)
+- **target_cpu: 60** — Lower target to scale up earlier since SSR can be CPU-intensive
+
+### Background workers
+
+Workers that process jobs from a queue have different scaling needs:
+
+```yaml title="hostess.yml"
+services:
+  worker:
+    type: custom
+    image: myorg/worker:latest
+    replicas:
+      min: 1
+      max: 5
+      target_cpu: 80
+    resources: medium
+```
+
+- **min: 1** — A single worker can handle low-traffic periods
+- **max: 5** — Scale up as queue depth increases (which drives CPU usage up)
+- **target_cpu: 80** — Workers can run hotter since they are not latency-sensitive
+
+### Full-stack example
+
+Here is a complete configuration with different scaling for each service type:
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 50Gi
+
+  cache:
+    type: redis
+    resources: medium
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    depends_on: [database, cache]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    replicas:
+      min: 2
+      max: 10
+      target_cpu: 70
+    resources: medium
+
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    depends_on: [api]
+    env:
+      NEXT_PUBLIC_API_URL: ${api.external_url}
+    replicas:
+      min: 2
+      max: 20
+      target_cpu: 60
+    resources: small
+
+  worker:
+    type: custom
+    build:
+      source: ./worker
+    depends_on: [database, cache]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    replicas:
+      min: 1
+      max: 5
+      target_cpu: 80
+    resources: medium
+```
+
+---
+
+## Choosing the Right Resource Preset
+
+Autoscaling works best when paired with the right resource allocation. If your resource preset is too small, CPU will spike quickly, causing unnecessary scaling. If it's too large, you're paying for unused capacity.
+
+| Preset | CPU | Memory | Typical Use |
+|--------|-----|--------|-------------|
+| `small` | 0.5 cores | 512Mi | Lightweight services, dev environments |
+| `medium` | 1.0 core | 1Gi | Production APIs, standard services |
+| `large` | 2.0 cores | 2Gi | High-traffic services, CPU-intensive work |
+| `xlarge` | 4.0 cores | 4Gi | Heavy processing, ML inference |
+
+**Tip**: Start with `medium` and monitor CPU usage. If your replicas consistently run below 30% CPU, consider using `small`. If they frequently hit 90%+ and scale up often, consider `large`.
+
+---
+
+## Monitoring and Adjusting
+
+After deploying with autoscaling, monitor your service's behavior in Hostess Studio:
+
+- **Current replicas**: How many instances are running right now
+- **CPU utilization**: Average CPU percentage across all replicas
+- **Scaling events**: When and why replicas were added or removed
+
+### Signs you need to adjust
+
+| Symptom | Action |
+|---------|--------|
+| Constantly at `max` replicas | Increase `max` or upgrade to a larger resource preset |
+| Frequent scale-up/scale-down | Increase `min` or lower `target_cpu` to stabilize |
+| Never scales above `min` | Your `min` may be too high, or `target_cpu` too low |
+| Latency spikes before scaling | Lower `target_cpu` (e.g., from 70 to 60) to scale up earlier |
+
+---
+
+## Important Notes
+
+<Callout type="warn">
+**Autoscaling applies to Hostess application services.** To increase capacity for managed database services (`postgres`, `redis`), use fixed replicas where the service type supports them or upgrade the resource preset.
+</Callout>
+
+<Callout type="warn">
+**Custom services with `persistence` configured scale with fixed `replicas`.** Autoscaling applies to stateless services; set an explicit replica count for persistent workers.
+</Callout>
+
+<Callout type="info">
+Autoscaling decisions are based on **CPU utilization** — set `target_cpu` to control when replicas are added or removed.
+</Callout>
+
+- The `target_cpu` default is **70%** if you specify `min` and `max` without an explicit target
+- Setting `min` equal to `max` effectively disables autoscaling (same as fixed replicas)
+- Autoscaling applies per-environment — you can have autoscaling in production and fixed replicas in staging

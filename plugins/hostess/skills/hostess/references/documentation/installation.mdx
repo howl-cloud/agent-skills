@@ -1,0 +1,90 @@
+---
+title: Installation
+description: Install the Hostess CLI on macOS, Linux, or Windows and verify your installation.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Install
+
+**macOS / Linux:**
+
+<Tabs items={["curl", "Homebrew"]}>
+<Tab value="curl">
+
+```bash title="Terminal"
+curl -fsSL https://hostess.sh/install.sh | sh
+```
+
+</Tab>
+<Tab value="Homebrew">
+
+```bash title="Terminal"
+brew install howl-cloud/tap/hostess
+```
+
+</Tab>
+</Tabs>
+
+**Windows:**
+
+<Tabs items={["PowerShell", "Manual download"]}>
+<Tab value="PowerShell">
+
+```powershell title="PowerShell"
+irm https://hostess.sh/install.ps1 | iex
+```
+
+</Tab>
+<Tab value="Manual download">
+
+Download the appropriate `hostess-windows-{arch}.exe` asset from the [hostess-cli releases](https://github.com/howl-cloud/hostess-cli/releases), rename it to `hostess.exe`, and add it to your `PATH`.
+
+</Tab>
+</Tabs>
+
+## Verify your installation
+
+```bash title="Terminal"
+hostess --version
+# hostess version 0.2.x
+```
+
+## Updating
+
+```bash title="Terminal"
+hostess update
+```
+
+## Uninstalling
+
+<Tabs items={["curl", "Homebrew", "Windows"]}>
+<Tab value="curl">
+
+```bash title="Terminal"
+rm -f ~/.local/bin/hostess
+rm -rf ~/.hostess
+```
+
+</Tab>
+<Tab value="Homebrew">
+
+```bash title="Terminal"
+brew uninstall hostess
+rm -rf ~/.hostess
+```
+
+</Tab>
+<Tab value="Windows">
+
+```powershell title="PowerShell"
+Remove-Item -Force "$env:USERPROFILE\.local\bin\hostess.exe" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:USERPROFILE\.hostess" -ErrorAction SilentlyContinue
+```
+
+</Tab>
+</Tabs>
+
+## Next steps
+
+After installing, [log in](https://docs.hostess.sh/docs/authentication) and follow the [Quick Start](https://docs.hostess.sh/docs/quick-start) to deploy your first application.

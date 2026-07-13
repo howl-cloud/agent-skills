@@ -1,0 +1,329 @@
+---
+title: Quick Start
+description: Deploy a full-stack application with Hostess in under 5 minutes.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+This guide walks you through deploying a **Next.js application with a PostgreSQL database** to Hostess. By the end, you will have a live, fully connected application stack running in production.
+
+<Callout type="info" title="Prerequisites">
+Before you begin, make sure you have:
+- The [Hostess CLI installed](https://docs.hostess.sh/docs/installation)
+- A [Hostess account](https://docs.hostess.sh/docs/authentication) (run `hostess login` if you haven't already)
+- A project directory with a Next.js application (or follow along to create one)
+</Callout>
+
+<Steps>
+<Step>
+
+## Install the CLI
+
+If you haven't already, install the Hostess CLI:
+
+```bash title="Terminal"
+curl -fsSL https://hostess.sh/install.sh | sh
+```
+
+Verify the installation:
+
+```bash title="Terminal"
+hostess --version
+```
+
+```
+hostess version 0.1.x
+```
+
+Your output may show a different version until you reinstall from the latest release via the install script.
+
+</Step>
+<Step>
+
+## Log in to your account
+
+Authenticate with your Hostess account:
+
+```bash title="Terminal"
+hostess login
+```
+
+`hostess login` prints a one-time browser link and opens it when possible:
+
+```
+Opening your browser to sign in to Hostess...
+
+If your browser did not open, visit:
+https://hostess.sh/cli/login/abc123
+
+Waiting for browser login...
+```
+
+Sign in or create your account in Studio, approve the CLI login, then return to your terminal.
+
+```
+Signed in as you@example.com
+```
+
+</Step>
+<Step>
+
+## Create your project directory
+
+If you already have a Next.js app, navigate to its root directory. Otherwise, create a new one:
+
+```bash title="Terminal"
+npx create-next-app@latest my-app
+cd my-app
+```
+
+Your project directory should look something like this:
+
+```
+my-app/
+├── app/
+│   ├── layout.tsx
+│   └── page.tsx
+├── package.json
+├── Dockerfile
+├── next.config.ts
+└── ...
+```
+
+<Callout type="info">
+Your project needs a **Dockerfile** so Hostess can build it. If you don't have one yet, here is a simple Dockerfile for a Next.js application:
+
+```dockerfile title="Dockerfile"
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+Make sure your `next.config.ts` includes `output: 'standalone'` for this Dockerfile to work.
+</Callout>
+
+</Step>
+<Step>
+
+## Write your hostess.yml
+
+Create a `hostess.yml` file in the root of your project. This file tells Hostess what services to deploy and how they connect:
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-app
+
+services:
+  web:
+    type: nextjs
+    build:
+      source: .
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+
+  database:
+    type: postgres
+    resources: small
+```
+
+This configuration defines two services:
+
+- **`web`** — Your Next.js application, built from the current directory. It receives a `DATABASE_URL` environment variable that automatically points to the Postgres database.
+- **`database`** — A managed PostgreSQL database with the `small` resource preset (0.5 CPU, 512Mi memory, 10Gi storage).
+
+The `depends_on` field ensures the database is healthy before the web service starts. The magic variable `${database.url}` is resolved automatically at deploy time with the full database connection string, including the password.
+
+</Step>
+<Step>
+
+## Deploy
+
+Run the deploy command from your project directory:
+
+```bash title="Terminal"
+hostess deploy
+```
+
+If the project name from `hostess.yml` does not exist yet, the CLI prompts you to pick an **organization** (project name is already known from the file — there is no separate “project name” prompt):
+
+```
+Project not found
+
+Project 'my-app' does not exist. Create it in which organization?
+
+▸ Acme (acme)
+  Personal (personal)
+
+↑/↓ to select, Enter to confirm, Esc to cancel
+```
+
+After you confirm, a line like this is printed before the deploy UI runs:
+
+```
+✓ Project 'my-app' created in organization 'acme'
+```
+
+<Callout type="info">
+If you omit `--env`, Hostess uses the **most recently created** environment for that project. New projects are provisioned with `production` first, then `preview`, so the usual default is **`preview`**. Use `hostess deploy --env production` (or another name) when you need a specific target.
+</Callout>
+
+While the deployment runs, the CLI shows a **five-step** progress view (wording and sub-lines update as the API reports build/service state). It looks conceptually like this:
+
+```
+Deploying project: my-app
+Environment: preview
+Services: database, web
+
+[1/5] Validating config... done
+[2/5] Creating deployment... done (dep_abc123)
+[3/5] Building images...
+  - web: built
+[4/5] Starting services...
+  - database: ready
+  - web: ready
+[5/5] Finalizing... done
+```
+
+When everything succeeds, the same header is shown again with a short summary (IDs and URLs are examples):
+
+```
+Deploying project: my-app
+Environment: preview
+Services: database, web
+
+Deployment complete
+Deployment ID: dep_abc123
+
+web: https://my-app-web-k7xm9p2q.hostess.run
+database: connection info available via `hostess inspect dep_abc123`
+
+→ View deployment: https://hostess.sh/dashboard/org/acme/projects/prj_xyz/deployments/dep_abc123
+```
+
+For private database services, the completion screen points at **`hostess inspect`** with that deployment id for connection details. You can still run **`hostess connect database`** or **`hostess ps`** to work with the service.
+
+If you added **custom domains** that are still pending DNS verification, the CLI may print **`Custom domain DNS records:`** with CNAME lines after a successful deploy.
+
+</Step>
+<Step>
+
+## Visit your application
+
+Open the URL from the deploy output in your browser:
+
+```bash title="Terminal"
+open https://my-app-web-k7xm9p2q.hostess.run
+```
+
+Your Next.js application is live, connected to a fully managed PostgreSQL database, with automatic HTTPS.
+
+</Step>
+<Step>
+
+## View in Studio
+
+The Hostess Studio is a web dashboard where you can monitor your deployments, view logs, manage services, and more. Visit:
+
+```
+https://hostess.sh
+```
+
+In Studio, you will see:
+
+- **Your project** with its services listed
+- **Deployment status** and history
+- **Service details** including URLs, resource usage, and logs
+- **Database dashboards** with connection info and metrics
+
+You can also view your deployment from the CLI:
+
+```bash title="Terminal"
+hostess ps
+```
+
+`hostess ps` is an alias for `hostess services list`. The table includes a **PORTS** column; ready services show status **Running** (not “healthy”):
+
+```
+SERVICE          TYPE       STATUS     PORTS    URL
+────────────────────────────────────────────────────────────────────────────────
+web              nextjs     Running    3000     https://my-app-web-k7xm9p2q.hostess.run
+database         postgres   Running    5432     hostess connect database
+```
+
+</Step>
+</Steps>
+
+## What just happened?
+
+When you ran `hostess deploy`, Hostess performed the following behind the scenes:
+
+1. **Parsed your `hostess.yml`** and validated the configuration
+2. **Uploaded your source code** and built a container image for the `web` service
+3. **Provisioned a managed PostgreSQL database** for the `database` service
+4. **Resolved magic variables** — the `${database.url}` reference was replaced with a full `postgresql://...` connection string containing auto-generated credentials
+5. **Deployed services in dependency order** — the database was started first, and the web service was deployed only after the database was healthy
+6. **Issued TLS certificates** for your `*.hostess.run` URLs
+7. **Set up routing** so your application is accessible from the internet
+
+## Making changes
+
+To redeploy after making changes to your code, simply run:
+
+```bash title="Terminal"
+hostess deploy
+```
+
+Hostess will rebuild your services, detect what has changed, and deploy only the updated components.
+
+### Deploy specific services
+
+If you only changed your web service and want to skip rebuilding everything:
+
+```bash title="Terminal"
+hostess deploy -s web
+```
+
+This deploys just the `web` service while keeping the database and other services as-is.
+
+## Using Hostess with AI agents
+
+If you use an AI coding agent (Claude Code, Codex, Cursor, etc.), install the Hostess skill so your agent understands `hostess.yml`, CLI commands, and deployment workflows without guessing:
+
+```bash title="Terminal"
+npx skills add howl-cloud/agent-skills --skill hostess --agent claude-code
+```
+
+See the [AI Agents](https://docs.hostess.sh/docs/ai-agents) page for installation instructions for other agents and example prompts.
+
+## Next steps
+
+<Cards>
+  <Card title="Configuration Reference" href="https://docs.hostess.sh/docs/configuration">
+    Learn about all the options available in hostess.yml, including environment variables, domains, scaling, lifecycle hooks, and more.
+  </Card>
+  <Card title="Magic Variables" href="https://docs.hostess.sh/docs/magic-variables">
+    Understand how services discover and connect to each other using magic variables.
+  </Card>
+  <Card title="Service Types" href="https://docs.hostess.sh/docs/service-types">
+    Explore all supported service types and their smart defaults.
+  </Card>
+  <Card title="Environments" href="https://docs.hostess.sh/docs/environments">
+    Set up preview environments, staging, and custom environments for your project.
+  </Card>
+</Cards>

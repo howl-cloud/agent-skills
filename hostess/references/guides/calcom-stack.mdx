@@ -1,0 +1,258 @@
+---
+title: Deploy the Cal.com Stack
+description: Deploy the maintained Cal.com example from howl-cloud/awesome-hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This guide deploys the Cal.com stack from the maintained [`howl-cloud/awesome-hostess`](https://github.com/howl-cloud/awesome-hostess) examples repo. Clone the example, add the required auth and email secrets, validate it, and deploy.
+
+## What You'll Deploy
+
+The `awesome-hostess/calcom` module contains the Hostess deployment config, a local Compose mirror, an example environment file, and a README:
+
+<Files>
+  <Folder name="calcom" defaultOpen>
+    <File name="hostess.yml" />
+    <File name="docker-compose.yml" />
+    <File name=".env.example" />
+    <File name="README.md" />
+  </Folder>
+</Files>
+
+| Service | Role |
+|---------|------|
+| `db` | Hostess-managed Postgres database for Cal.com |
+| `redis` | Hostess-managed Redis for Cal.com runtime state |
+| `calcom` | Public Cal.com web app |
+
+The public service is `calcom`. Postgres and Redis stay private inside the deployment network.
+
+<Callout type="info">
+  The maintained example uses the published `calcom/cal.com:v6.2.0` image and keeps the stack image-only.
+</Callout>
+
+## Prerequisites
+
+- Hostess CLI installed and authenticated with `hostess login`
+- `openssl`
+- SMTP credentials for real email delivery, or sandbox SMTP credentials for testing
+
+<Steps>
+
+<Step>
+### Clone the example module
+
+Clone the examples repo and move into the Cal.com module:
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/calcom
+```
+
+All commands in the rest of this guide run from `awesome-hostess/calcom`.
+</Step>
+
+<Step>
+### Create auth and encryption secrets
+
+Cal.com needs a NextAuth secret and an encryption key for sensitive application data:
+
+```bash title="Terminal"
+hostess secrets add NEXTAUTH_SECRET --value "$(openssl rand -base64 32)"
+hostess secrets add CALENDSO_ENCRYPTION_KEY --value "$(openssl rand -base64 32)"
+```
+
+<Callout type="warn">
+  Keep both values stable. Rotating `CALENDSO_ENCRYPTION_KEY` can prevent Cal.com from decrypting data that was saved with the old key.
+</Callout>
+</Step>
+
+<Step>
+### Add SMTP secrets
+
+Set the SMTP values Cal.com uses for account and booking emails. With Resend SMTP:
+
+```bash title="Terminal"
+hostess secrets add EMAIL_SERVER_HOST --value "smtp.resend.com"
+hostess secrets add EMAIL_SERVER_PORT --value "465"
+hostess secrets add EMAIL_SERVER_USER --value "resend"
+hostess secrets add EMAIL_SERVER_PASSWORD --value "YOUR_RESEND_API_KEY"
+```
+
+Resend requires a verified sending domain. If you only need to smoke test email features, use a sandbox provider such as Mailtrap:
+
+```bash title="Terminal"
+hostess secrets add EMAIL_SERVER_HOST --value "sandbox.smtp.mailtrap.io"
+hostess secrets add EMAIL_SERVER_PORT --value "2525"
+hostess secrets add EMAIL_SERVER_USER --value "YOUR_MAILTRAP_SANDBOX_USERNAME"
+hostess secrets add EMAIL_SERVER_PASSWORD --value "YOUR_MAILTRAP_SANDBOX_PASSWORD"
+```
+</Step>
+
+<Step>
+### Validate the module
+
+Validate the maintained `hostess.yml` before deploying:
+
+```bash title="Terminal"
+hostess validate
+```
+
+You should see:
+
+```text
+✓ Configuration is valid
+```
+
+If you want to compare the local Compose mirror too:
+
+```bash title="Terminal"
+docker compose config --quiet
+```
+</Step>
+
+<Step>
+### Deploy the stack
+
+Deploy from the module directory:
+
+```bash title="Terminal"
+hostess deploy --env preview
+```
+
+If this is your first deployment from this directory, Hostess prompts you to create a project. The deployment output includes the public `calcom` URL:
+
+```text
+✓ Deployment complete
+
+  calcom: https://calcom-calcom-abc123.hostess.run
+```
+</Step>
+
+<Step>
+### Open Cal.com
+
+Open the `calcom` URL from the deployment output:
+
+```text
+https://calcom-calcom-abc123.hostess.run
+```
+
+On a fresh deployment, complete Cal.com's first-user setup flow, then configure event types and calendar connections from the Cal.com UI.
+</Step>
+
+<Step>
+### Smoke-test the deployment
+
+Check the public Cal.com service:
+
+```bash title="Terminal"
+curl -I https://calcom-calcom-abc123.hostess.run
+```
+
+Then create a test event type and send a booking email through the SMTP provider you configured.
+</Step>
+
+</Steps>
+
+## Hostess Configuration Highlights
+
+The maintained `hostess.yml` wires Cal.com to Hostess-managed Postgres and Redis with magic variables:
+
+```yaml title="hostess.yml excerpt"
+services:
+  db:
+    type: postgres
+    retention: permanent
+    resources:
+      preset: small
+      storage: 10Gi
+    backups:
+      schedule: daily
+      retention: 14
+
+  redis:
+    type: redis
+    retention: permanent
+    resources:
+      preset: small
+
+  calcom:
+    type: nextjs
+    image: calcom/cal.com:v6.2.0
+    depends_on:
+      - db
+      - redis
+    public: true
+    ports:
+      - port: 3000
+        public: true
+    resources: medium
+    health:
+      http: /
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    env:
+      NEXT_PUBLIC_WEBAPP_URL: ${calcom.external_url}
+      NEXTAUTH_URL: ${calcom.external_url}/api/auth
+      NEXTAUTH_SECRET: ${secret:NEXTAUTH_SECRET}
+      CALENDSO_ENCRYPTION_KEY: ${secret:CALENDSO_ENCRYPTION_KEY}
+      DATABASE_URL: ${db.url}
+      DATABASE_DIRECT_URL: ${db.url}
+      REDIS_URL: ${redis.url}
+      EMAIL_SERVER_HOST: ${secret:EMAIL_SERVER_HOST}
+      EMAIL_SERVER_PORT: ${secret:EMAIL_SERVER_PORT}
+      EMAIL_SERVER_USER: ${secret:EMAIL_SERVER_USER}
+      EMAIL_SERVER_PASSWORD: ${secret:EMAIL_SERVER_PASSWORD}
+      NEXT_PUBLIC_API_V2_URL: ${calcom.external_url}/api/v2
+```
+
+Use `${db.url}` and `${redis.url}` as exact environment values. They resolve to the managed services inside the deployment network.
+
+## Run It Locally With Compose
+
+The example includes a local Compose mirror:
+
+```bash title="Terminal"
+docker compose up
+```
+
+The local app listens on `http://localhost:3000`.
+
+## Updating The Stack
+
+Because this guide uses `howl-cloud/awesome-hostess`, stack updates come from the examples repo:
+
+```bash title="Terminal"
+cd awesome-hostess
+git pull
+cd calcom
+hostess validate
+hostess deploy --env preview
+```
+
+For changes that only affect the Cal.com app process, deploy that service:
+
+```bash title="Terminal"
+hostess deploy --env preview -s calcom
+```
+
+For database, Redis, secret, or dependency changes, redeploy the full stack.
+
+## Notes
+
+- Required user-provided secrets are `NEXTAUTH_SECRET`, `CALENDSO_ENCRYPTION_KEY`, `EMAIL_SERVER_HOST`, `EMAIL_SERVER_PORT`, `EMAIL_SERVER_USER`, and `EMAIL_SERVER_PASSWORD`.
+- The example sets `EMAIL_FROM` to `bookings@example.com`. Change it in the example before production use.
+- The stack uses the published Cal.com app image.
+- `GOOGLE_API_CREDENTIALS` is set to `{}` in the example. Add real provider credentials when you need calendar integrations.
+
+## What's Next
+
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** - Rotate Cal.com and SMTP secrets safely
+- **[Backups & Restore](https://docs.hostess.sh/docs/guides/backups-and-restore)** - Protect the Cal.com Postgres database
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** - Put your own domain in front of Cal.com
+

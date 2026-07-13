@@ -1,0 +1,20 @@
+{
+  "title": "CLI Commands",
+  "pages": [
+    "deploy",
+    "init",
+    "validate",
+    "update",
+    "auth",
+    "deployments",
+    "services",
+    "connect",
+    "secrets",
+    "projects",
+    "orgs",
+    "domains",
+    "environments",
+    "backups",
+    "jobs"
+  ]
+}

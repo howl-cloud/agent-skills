@@ -1,0 +1,111 @@
+---
+title: hostess jobs
+description: Manage top-level jobs declared in hostess.yml.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Manage top-level jobs declared in `hostess.yml`.
+
+Top-level jobs are finite workloads that run on deploy, run once, run on a schedule, or run only when triggered manually. They are declared under the top-level `jobs:` map, separate from long-running `services:`.
+
+## Usage
+
+```bash title="Terminal"
+hostess jobs [command] [flags]
+```
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `list` / `ls` | List jobs in the latest deployment |
+| `inspect <job>` | Show job details |
+| `runs <job>` | List recent runs for a cron job |
+| `run <job>` | Trigger a job manually or reset a `once` job for the next deploy |
+
+## Targeting Flags
+
+| Flag | Short | Type | Default | Description |
+|---|---|---|---|---|
+| `--project` | `-p` | `string` | From `hostess.yml` | Project name |
+| `--env` | `-e` | `string` | Latest deployment if omitted for `list`, `inspect`, and `runs`; required for `run` | Environment name |
+
+For `hostess jobs run`, set `--env` explicitly because manual job triggers target an environment.
+
+## Run Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--next-deploy` | `bool` | `false` | Reset a `run: once` job so it runs on the next deploy |
+| `--force` | `bool` | `false` | Trigger a job whose run policy is not `manual` |
+| `--set-env` | `string[]` | | Override an environment value for this run; repeat for multiple values |
+| `--env-from` | `string` | | Load run overrides from a `KEY=VALUE` file |
+| `--allow-secret-override` | `bool` | `false` | Allow `--set-env` to replace a secret-backed value |
+
+## Examples
+
+```bash title="Terminal"
+hostess jobs list --project my-app --env production
+hostess jobs ls --project my-app --env production
+hostess jobs inspect migrate-db --project my-app --env production
+hostess jobs runs daily-report --project my-app --env production
+hostess jobs run rebuild-search --project my-app --env production
+```
+
+Override environment variables for one run:
+
+```bash title="Terminal"
+hostess jobs run daily-report \
+  --project my-app \
+  --env production \
+  --set-env REPORT_DATE=2026-05-12
+```
+
+Force-run a non-manual job:
+
+```bash title="Terminal"
+hostess jobs run migrate-db --project my-app --env production --force
+```
+
+Re-run a `once` job on the next deploy:
+
+```bash title="Terminal"
+hostess jobs run setup --project my-app --env production --next-deploy
+```
+
+<Callout type="warn">
+`--set-env` can override literal job environment values. To override a secret-backed value, you must also pass `--allow-secret-override`.
+</Callout>
+
+## Job Configuration
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./api
+
+jobs:
+  migrate-db:
+    build:
+      source: ./api
+    command: ["alembic", "upgrade", "head"]
+    run: on_deploy
+    depends_on:
+      database:
+        condition: healthy
+
+  daily-report:
+    image: ghcr.io/acme/reports:latest
+    command: ["python", "-m", "reports.daily"]
+    run: cron
+    schedule: daily
+```
+
+See [Configuration Reference](https://docs.hostess.sh/docs/configuration#jobs) for the full `jobs:` schema.

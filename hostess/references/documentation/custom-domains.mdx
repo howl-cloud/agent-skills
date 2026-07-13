@@ -1,0 +1,358 @@
+---
+title: Custom Domains
+description: Add custom domains to your services with automatic HTTPS via Let's Encrypt.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+Custom domains let you serve application services from branded domain names like `myapp.com` or `api.myapp.com`. Public application services can also receive generated `hostess.run` URLs, so you can use the generated URL while DNS is being configured and keep it available after your custom domain is active.
+
+Hostess handles everything related to HTTPS — TLS certificates are automatically provisioned via Let's Encrypt and renewed before expiration. You just need to configure a DNS record.
+
+---
+
+## How It Works
+
+Adding a custom domain — through `hostess.yml`, Studio, or `hostess domains add` — always targets a specific service in a specific environment. Hostess:
+
+1. **Routes traffic immediately.** If the target service is already live in that environment, the domain works as soon as you add it — no redeploy required. If the service hasn't been deployed to that environment yet, the domain takes effect automatically on its next deploy, and Studio and the CLI tell you when that's the case.
+2. **Provisions a TLS certificate** via Let's Encrypt using HTTP-01 challenge validation.
+3. **Serves HTTPS traffic** using the provisioned certificate, with automatic HTTP-to-HTTPS redirects.
+4. **Renews the certificate** automatically before it expires (certificates are valid for 90 days; Hostess renews them at 60 days).
+
+Hostess manages certificate provisioning, TLS settings, and renewals automatically.
+
+---
+
+## Adding Domains via hostess.yml
+
+There are two ways to configure custom domains in your `hostess.yml` file:
+
+### Service-Level Domains (Production Shorthand)
+
+The simplest way to add custom domains is directly on the service definition. This applies the domains to the **production environment only**:
+
+```yaml title="hostess.yml"
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    domains:
+      - myapp.com
+      - www.myapp.com
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    domains:
+      - api.myapp.com
+```
+
+This is the most common approach when you only need custom domains in production.
+
+### Environment-Level Domains
+
+For per-environment domains (e.g., different domains for staging vs. production), configure them in the `environments` section:
+
+```yaml title="hostess.yml"
+environments:
+  production:
+    domains:
+      frontend: [myapp.com, www.myapp.com]
+      api: [api.myapp.com]
+
+  staging:
+    domains:
+      frontend: [staging.myapp.com]
+      api: [api-staging.myapp.com]
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+```
+
+### Combining Both Approaches
+
+You can use service-level domains for production and environment-level domains for other environments:
+
+```yaml title="hostess.yml"
+environments:
+  staging:
+    domains:
+      frontend: [staging.myapp.com]
+
+services:
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    domains:
+      - myapp.com          # Production only (shorthand)
+      - www.myapp.com      # Production only (shorthand)
+```
+
+<Callout type="info">
+Environment-level domains **override** service-level domains for that environment. If you configure domains for `frontend` under both `services.frontend.domains` and `environments.production.domains`, the environment-level configuration wins for production.
+</Callout>
+
+---
+
+## Adding Domains via CLI
+
+You can also add custom domains using the Hostess CLI without modifying your `hostess.yml`:
+
+```bash title="Terminal"
+# Add a production domain
+hostess domains add --service frontend --env production myapp.com
+
+# Add a staging domain
+hostess domains add --service frontend --env staging staging.myapp.com
+
+# List all domains for the project
+hostess domains list
+
+# Remove a domain
+hostess domains remove myapp.com
+```
+
+Each write reports the routing outcome: whether traffic is already flowing, whether it will start once the target service deploys, or a warning if the routing update needs a retry.
+
+See the [CLI domains reference](https://docs.hostess.sh/docs/cli/domains) for all available commands and options.
+
+---
+
+## Retargeting a Domain
+
+To point an existing domain at a different service or environment, edit it in Studio or use `hostess domains update`. DNS verification carries over, so there's no need to re-verify after retargeting.
+
+**Studio:** Open **Domains** in the project sidebar and click the pencil icon next to the domain to change its service and environment.
+
+**CLI:**
+
+```bash title="Terminal"
+# Move a domain to a different service
+hostess domains update myapp.com --service backend
+
+# Move a domain to a different environment
+hostess domains update myapp.com --service backend --env staging
+```
+
+To point a different hostname at a service, remove the domain and add the new one.
+
+---
+
+## Verifying DNS
+
+Check whether a domain's DNS is configured correctly at any time:
+
+```bash title="Terminal"
+hostess domains verify myapp.com
+```
+
+This re-checks DNS against the target shown in Studio or `hostess domains list` (a CNAME, or equivalent A records) and reports whether the domain is verified.
+
+---
+
+## DNS Configuration
+
+After adding a custom domain, you need to create a DNS record that points your domain to the Hostess routing endpoint. The record type depends on your domain:
+
+### CNAME Record (Recommended)
+
+For subdomains (e.g., `app.myapp.com`, `api.myapp.com`, `www.myapp.com`), create a CNAME record:
+
+```
+Type:  CNAME
+Name:  app.myapp.com
+Value: ingress.hostess.run
+```
+
+### Apex Domains (Root Domains)
+
+For apex domains (e.g., `myapp.com` without a subdomain), use the apex record option your DNS provider offers for hostname targets, such as CNAME flattening, ALIAS, or ANAME. The Hostess target stays the same:
+
+```txt
+Type:  CNAME
+Name:  myapp.com
+Value: ingress.hostess.run
+```
+
+Your DNS provider may show a different record type for apex domains, but the value should still point at `ingress.hostess.run`.
+
+### DNS Examples by Provider
+
+<Tabs items={["Cloudflare", "Route 53", "Namecheap"]}>
+<Tab value="Cloudflare">
+
+1. Go to your domain's DNS settings in the Cloudflare dashboard.
+2. Click **Add Record**.
+3. Set **Type** to `CNAME`.
+4. Set **Name** to your subdomain (e.g., `app`) or `@` for the apex.
+5. Set **Target** to `ingress.hostess.run`.
+6. Set the proxy status to **DNS only** (grey cloud icon) so Hostess can provision and serve the TLS certificate.
+7. Click **Save**.
+
+</Tab>
+<Tab value="Route 53">
+
+1. Go to your hosted zone in the AWS Route 53 console.
+2. Click **Create Record**.
+3. Enter your subdomain in the **Record name** field.
+4. Set **Record type** to `CNAME`.
+5. Enter `ingress.hostess.run` as the **Value**.
+6. Click **Create records**.
+
+For apex domains, use the hostname-targeting option available in your DNS setup.
+
+</Tab>
+<Tab value="Namecheap">
+
+1. Go to your domain's **Advanced DNS** settings.
+2. Click **Add New Record**.
+3. Set **Type** to `CNAME Record`.
+4. Set **Host** to your subdomain (e.g., `app`) or `@` for the apex.
+5. Set **Value** to `ingress.hostess.run`.
+6. Click the checkmark to save.
+
+</Tab>
+</Tabs>
+
+---
+
+## Per-Environment Domains
+
+Different environments can have different custom domains. This is useful for giving staging its own branded URL while keeping production on the primary domain:
+
+```yaml title="hostess.yml"
+environments:
+  production:
+    domains:
+      frontend: [myapp.com, www.myapp.com]
+      api: [api.myapp.com]
+
+  staging:
+    domains:
+      frontend: [staging.myapp.com]
+      api: [api-staging.myapp.com]
+```
+
+Each environment's domains need their own DNS records:
+
+```
+# Production
+CNAME myapp.com       → ingress.hostess.run
+CNAME www.myapp.com   → ingress.hostess.run
+CNAME api.myapp.com   → ingress.hostess.run
+
+# Staging
+CNAME staging.myapp.com     → ingress.hostess.run
+CNAME api-staging.myapp.com → ingress.hostess.run
+```
+
+---
+
+## Auto-Generated URLs
+
+Public application services and public ports receive generated URLs on the `hostess.run` domain:
+
+```
+https://{project}-{service}-{nanoID}.hostess.run
+```
+
+For example, a public frontend and public API can have URLs like:
+```
+https://my-app-frontend-k7xm9p2q.hostess.run
+https://my-app-api-a3x9d2m1.hostess.run
+```
+
+These URLs point to the active deployment for that service. Custom domains are an addition, so generated URLs and custom domain URLs can work side by side.
+
+---
+
+## Validation Rules
+
+Custom domains must follow these rules:
+
+| Rule | Detail |
+|---|---|
+| Format | Valid RFC 1123 hostname (lowercase, alphanumeric, hyphens, dots) |
+| Length | Maximum 253 characters |
+| Scheme | Domain name only, without an `https://` prefix |
+| Wildcards | Use explicit hostnames such as `app.myapp.com` |
+| Uniqueness | Globally unique, with one service and environment per domain |
+| Duplicates | One entry per domain within the same service |
+| Service type | Application services can use custom domains |
+
+### Valid Examples
+
+```yaml
+domains:
+  - myapp.com
+  - www.myapp.com
+  - api.myapp.com
+  - staging.myapp.com
+  - app.internal.myapp.com
+```
+
+### Use Domain Names Only
+
+```yaml
+domains:
+  - myapp.com
+  - api.myapp.com
+  - staging.myapp.com
+```
+
+---
+
+## Troubleshooting
+
+### DNS Propagation Delays
+
+After creating a CNAME record, it can take time for DNS changes to propagate. While most changes propagate within a few minutes, it can take up to 48 hours in some cases.
+
+**What to do:**
+- Wait 5-10 minutes after creating the DNS record, then check again.
+- Use a DNS lookup tool to verify your record is visible: `dig CNAME myapp.com` or check [dnschecker.org](https://dnschecker.org).
+- If the record is visible in DNS lookups but Hostess still shows it as pending, wait a few more minutes — Hostess checks DNS periodically.
+
+### TLS Certificate Provisioning Delays
+
+TLS certificate provisioning typically takes 1-2 minutes after DNS verification succeeds.
+
+**What to do:**
+- Verify that DNS is correctly configured (the CNAME points to `ingress.hostess.run`).
+- If using Cloudflare, use **DNS-only mode** (grey cloud).
+- Check whether the domain is already connected to another Hostess project or another platform.
+- Redeploy your service — this can trigger a new certificate provisioning attempt.
+
+### Domain Conflicts
+
+Each domain maps to one service in one environment across Hostess.
+
+**What to do:**
+- Check if the domain is already configured in another project or environment.
+- To move a domain between your own services or environments, use [retargeting](#retargeting-a-domain) instead of removing and re-adding it.
+- Contact support for help with ownership checks.
+
+### Common Mistakes
+
+| Check | Fix |
+|---|---|
+| Domain includes `https://` | Use just the domain name: `myapp.com` |
+| Cloudflare proxy is enabled | Switch to DNS-only mode (grey cloud) |
+| DNS points at an old target | Point to `ingress.hostess.run` |
+| Domain is attached to a database service | Attach custom domains to application services |
+| Same domain is used in multiple environments | Give each environment its own hostname |

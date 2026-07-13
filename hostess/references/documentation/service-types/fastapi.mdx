@@ -1,0 +1,662 @@
+---
+title: FastAPI
+description: Deploy FastAPI applications with automatic health checks, database migrations, and background workers on Hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+The `fastapi` service type is designed for [FastAPI](https://fastapi.tiangolo.com) applications — the modern, high-performance Python web framework. When you set `type: fastapi`, Hostess configures sensible defaults for port, health checks, and resource allocation tailored to Python web services.
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+```
+
+That is the simplest possible FastAPI service. Hostess takes care of the rest.
+
+### Defaults
+
+When you use `type: fastapi`, Hostess applies the following defaults:
+
+| Setting | Default Value |
+|---|---|
+| Port | `8000` |
+| Health check | `GET /health` |
+| Resources | `medium` (1 CPU, 1Gi memory) |
+| Replicas | `1` |
+
+You can override any of these in your `hostess.yml` configuration.
+
+---
+
+## Build Requirements
+
+This page builds from your own Dockerfile (`build`). If you'd rather skip the Dockerfile entirely, use [`source`](/documentation/configuration#build-configuration) — Hostess auto-detects your Python app (from `requirements.txt`/`pyproject.toml`), then installs and runs it for you. The rest of this page applies when you want full control via a Dockerfile.
+
+A FastAPI Dockerfile installs your Python dependencies and starts the Uvicorn (or equivalent ASGI) server. Hostess builds the Docker image from your source code and deploys it.
+
+### Recommended Dockerfile
+
+Here is a production-ready Dockerfile for a typical FastAPI application:
+
+<Tabs items={["pip", "Poetry", "uv"]}>
+<Tab value="pip">
+
+```dockerfile title="Dockerfile"
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Run with Uvicorn
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+</Tab>
+<Tab value="Poetry">
+
+```dockerfile title="Dockerfile"
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install Poetry
+RUN pip install --no-cache-dir poetry
+RUN poetry config virtualenvs.create false
+
+# Install dependencies
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --no-dev --no-interaction --no-ansi
+
+# Copy application code
+COPY . .
+
+# Run with Uvicorn
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+</Tab>
+<Tab value="uv">
+
+```dockerfile title="Dockerfile"
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Install dependencies
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+# Copy application code
+COPY . .
+
+# Run with Uvicorn
+EXPOSE 8000
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+</Tab>
+</Tabs>
+
+### Build Configuration
+
+Your `hostess.yml` specifies where to find the source code and optionally a custom Dockerfile:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+      dockerfile: Dockerfile.prod    # Optional: defaults to "Dockerfile"
+      args:                          # Optional: build arguments
+        PYTHON_VERSION: "3.12"
+```
+
+---
+
+## Database Migrations
+
+Most FastAPI applications use a database with an ORM (like SQLAlchemy) and a migration tool (like Alembic). Hostess lifecycle hooks can run migrations from the same service image during deployment.
+
+### Alembic Migrations
+
+The `lifecycle.migrate` hook runs your migration command as a standalone deployment task before the application rollout continues. Plan migrations so your current and new application versions can tolerate the migration while it is running.
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+    depends_on:
+      - database
+    lifecycle:
+      migrate:
+        command: ["alembic", "upgrade", "head"]
+        timeout: 10m
+
+  database:
+    type: postgres
+    resources: medium
+```
+
+The migration command runs as a standalone deployment task using the same Docker image as your service. This means your migration tools (Alembic, its configuration, and the migration files) must be included in the Docker image.
+
+<Callout type="info">
+Use backward-compatible migrations: add nullable columns before requiring them, deploy code that can read both old and new shapes, and run destructive cleanup after the new version is stable.
+</Callout>
+
+### Other Migration Tools
+
+The `lifecycle.migrate` hook works with any migration tool, not just Alembic:
+
+```yaml title="Using Aerich (Tortoise ORM)"
+lifecycle:
+  migrate:
+    command: ["aerich", "upgrade"]
+```
+
+```yaml title="Using custom script"
+lifecycle:
+  migrate:
+    command: ["python", "scripts/migrate.py"]
+    timeout: 15m
+```
+
+---
+
+## Background Workers with Celery
+
+Many FastAPI applications use Celery for background task processing. In Hostess, you run Celery workers as a separate `custom` service that shares the same codebase as your API:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+    depends_on:
+      - database
+      - cache
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker", "--loglevel=info"]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+    replicas: 3
+    resources: medium
+    health:
+      command: "celery -A app.celery inspect ping"
+      interval: 30s
+      timeout: 10s
+
+  beat:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "beat", "--loglevel=info"]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+    replicas: 1
+
+  database:
+    type: postgres
+    resources: medium
+
+  cache:
+    type: redis
+    resources: small
+```
+
+Key points about this pattern:
+
+- The `worker` and `beat` services use the same `build.source` as the `api` service, so they can share the same application code and Dockerfile.
+- Hostess builds each service under its own service name, even when multiple services use the same source directory.
+- The `command` field replaces the image `CMD` arguments so the worker starts Celery instead of Uvicorn.
+- The worker has its own health check using `celery inspect ping`.
+- The beat scheduler should always run as exactly 1 replica to avoid duplicate scheduled tasks.
+- Workers can be scaled independently by adjusting `replicas`.
+
+---
+
+## Environment Variables
+
+FastAPI applications typically need environment variables for database connections, secret keys, and third-party service configuration:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      # Database and cache connections (magic variables)
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+
+      # Secrets from the Hostess secret store
+      JWT_SECRET: ${secret:JWT_SECRET}
+      STRIPE_SECRET_KEY: ${secret:STRIPE_SECRET_KEY}
+      SENDGRID_API_KEY: ${secret:SENDGRID_API_KEY}
+
+      # Literal values
+      LOG_LEVEL: info
+      CORS_ORIGINS: ${frontend.external_url}
+      ENVIRONMENT: ${deployment.environment}
+
+      # Internal service-to-service URLs
+      ML_SERVICE_URL: ${ml-inference.url}
+
+    depends_on:
+      - database
+      - cache
+```
+
+In your FastAPI application, access these via standard environment variable patterns:
+
+```python title="app/config.py"
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    database_url: str
+    redis_url: str
+    jwt_secret: str
+    stripe_secret_key: str
+    log_level: str = "info"
+    cors_origins: str = ""
+    environment: str = "production"
+
+settings = Settings()
+```
+
+---
+
+## API Insights
+
+Every FastAPI service that takes traffic through a public Hostess URL gets request volume, latency, and error-rate charts on its **Metrics** tab in [Studio](https://docs.hostess.sh/docs/studio) — no code, no configuration. For **route-level** detail and distributed traces, add the Hostess Python helper.
+
+### Install
+
+```bash
+pip install "hostess-python[fastapi]"
+```
+
+Add the dependency to your `requirements.txt` (or `pyproject.toml`) so it's included in the image Hostess builds:
+
+```text title="requirements.txt"
+hostess-python[fastapi]
+```
+
+### Instrument your app
+
+Call `instrument(app)` once, after you create your `FastAPI` instance:
+
+```python title="app/main.py"
+from fastapi import FastAPI
+from hostess_sdk.fastapi import instrument
+
+app = FastAPI()
+instrument(app)
+```
+
+<Callout type="info">
+The distribution is named `hostess-python`, but the import package is **`hostess_sdk`**.
+</Callout>
+
+That's the whole integration. The helper preconfigures OpenTelemetry instrumentation and points it at Hostess automatically — you don't set any OTLP endpoints or environment variables yourself. Hostess injects everything the helper needs at deploy time.
+
+### What you get
+
+Once the helper is deployed and taking traffic, the **Metrics** tab unlocks:
+
+- **Per-route traffic, latency, and status codes** — broken down by route template (e.g. `/users/{id}`) instead of one aggregate line.
+- **Framework version** — the exact FastAPI version the running service reports.
+- **Distributed traces** — click a route to see recent sampled traces, then open one as a waterfall. See [Insights → Traces](https://docs.hostess.sh/docs/insights#traces).
+
+![FastAPI Traces](https://docs.hostess.sh/images/studio/fastapi-traces.png)
+
+### Turning it off
+
+Insights are on by default. To disable collection for a service, set `insights: disabled`:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    insights: disabled
+```
+
+See the [Insights guide](https://docs.hostess.sh/docs/insights) for the full picture and the [Configuration Reference](https://docs.hostess.sh/docs/configuration#insights) for the field details.
+
+---
+
+## Health Check Customization
+
+By default, Hostess checks `GET /health` on port 8000 to determine if your FastAPI application is healthy. You should create this endpoint in your application:
+
+```python title="app/main.py"
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+```
+
+### Custom Health Check Path
+
+If you prefer a different health check endpoint, override it in your configuration:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    health:
+      http: /api/v1/healthz
+      interval: 15s
+      timeout: 3s
+      retries: 5
+```
+
+### Deep Health Checks
+
+For production applications, consider implementing a health check that verifies downstream dependencies:
+
+```python title="app/main.py"
+from fastapi import FastAPI, Response
+import asyncpg
+import redis.asyncio as redis
+
+app = FastAPI()
+
+@app.get("/health")
+async def health_check(response: Response):
+    checks = {"api": "ok"}
+
+    # Check database
+    try:
+        conn = await asyncpg.connect(settings.database_url)
+        await conn.fetchval("SELECT 1")
+        await conn.close()
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "error"
+
+    # Check Redis
+    try:
+        r = redis.from_url(settings.redis_url)
+        await r.ping()
+        await r.close()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "error"
+
+    # Return 503 if any dependency is down
+    if any(v == "error" for v in checks.values()):
+        response.status_code = 503
+
+    return checks
+```
+
+<Callout type="info">
+Be careful with deep health checks. If your health check queries the database and the database is temporarily slow, Hostess may restart your API unnecessarily. Consider using shorter timeouts or a lightweight endpoint for routine health checks.
+</Callout>
+
+---
+
+## Custom Ports
+
+By default, FastAPI services listen on port 8000. If your application uses a different port, override it:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    ports: [8080]
+```
+
+Make sure your Uvicorn command also uses the same port:
+
+```dockerfile title="Dockerfile"
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+---
+
+## Replicas and Autoscaling
+
+For production FastAPI applications, configure multiple replicas or autoscaling:
+
+<Tabs items={["Fixed Replicas", "Autoscaling"]}>
+<Tab value="Fixed Replicas">
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    replicas: 3
+    resources: medium
+```
+
+</Tab>
+<Tab value="Autoscaling">
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    replicas:
+      min: 2
+      max: 10
+      target_cpu: 70
+    resources: medium
+```
+
+</Tab>
+</Tabs>
+
+### Recommendations
+
+- **Development and staging** — 1 replica with `small` or `medium` resources.
+- **Production APIs** — Start with `min: 2` for redundancy. Two replicas ensure availability during deployments and restarts.
+- **High-traffic APIs** — Use autoscaling. FastAPI with Uvicorn handles concurrent requests well, so CPU-based autoscaling is an effective strategy.
+- **CPU-intensive workloads** — If your API does heavy computation (image processing, data analysis), use `large` or `xlarge` resources and consider more aggressive autoscaling.
+
+---
+
+## Custom Domains
+
+Assign custom domains to your FastAPI service:
+
+```yaml title="hostess.yml"
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    domains:
+      - api.myapp.com
+```
+
+After deploying, configure DNS for the domain using the target shown by Hostess. See [Custom Domains](https://docs.hostess.sh/docs/custom-domains) for the full setup guide.
+
+---
+
+## Complete Examples
+
+### Minimal FastAPI Application
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: .
+```
+
+### FastAPI with Database and Migrations
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-api
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+    depends_on:
+      - database
+    lifecycle:
+      migrate:
+        command: ["alembic", "upgrade", "head"]
+    replicas:
+      min: 2
+      max: 10
+    domains:
+      - api.myapp.com
+
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 50Gi
+    backups: daily
+```
+
+### Full-Stack with Workers
+
+```yaml title="hostess.yml"
+version: "1.0"
+name: my-platform
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+      JWT_SECRET: ${secret:JWT_SECRET}
+      STRIPE_KEY: ${secret:STRIPE_KEY}
+      FRONTEND_URL: ${frontend.external_url}
+    depends_on:
+      - database
+      - cache
+    lifecycle:
+      migrate:
+        command: ["alembic", "upgrade", "head"]
+    replicas:
+      min: 2
+      max: 10
+      target_cpu: 70
+    resources: medium
+    domains:
+      - api.myplatform.com
+
+  worker:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "worker", "--loglevel=info", "--concurrency=4"]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+    replicas: 3
+    resources: medium
+    health:
+      command: "celery -A app.celery inspect ping"
+
+  beat:
+    type: custom
+    build:
+      source: ./backend
+    command: ["celery", "-A", "app.celery", "beat", "--loglevel=info"]
+    env:
+      DATABASE_URL: ${database.url}
+      REDIS_URL: ${cache.url}
+    depends_on:
+      - database
+      - cache
+    replicas: 1
+
+  frontend:
+    type: nextjs
+    build:
+      source: ./frontend
+    env:
+      API_URL: ${api.url}
+    depends_on:
+      - api
+    domains:
+      - myplatform.com
+      - www.myplatform.com
+
+  database:
+    type: postgres
+    resources:
+      preset: large
+      storage: 100Gi
+    backups:
+      schedule: daily
+      retention: 30
+
+  cache:
+    type: redis
+    resources: medium
+```

@@ -1,0 +1,323 @@
+---
+title: Deploy Specific Services
+description: Deploy individual services in monorepos using the -s flag for targeted builds
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps, Step } from 'fumadocs-ui/components/steps'
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
+
+In a multi-service project, you don't always need to rebuild and redeploy everything. The `-s` flag lets you deploy only the services that changed — saving build time, reducing risk, and speeding up your CI/CD pipeline.
+
+---
+
+## Why Per-Service Deploys?
+
+A typical `hostess.yml` might define 4-5 services: a frontend, a backend API, a worker, and databases. When you change a single line in the backend, there is no reason to rebuild and redeploy the frontend.
+
+| Approach | Build Time | Risk | Use Case |
+|----------|-----------|------|----------|
+| Full deploy (`hostess deploy`) | Longer — rebuilds all services | Higher — everything is redeployed | Major releases, config changes, new services |
+| Per-service deploy (`hostess deploy -s api`) | Shorter — only changed services rebuild | Lower — unchanged services stay running | Bug fixes, feature work, hot fixes |
+
+---
+
+## Basic Usage
+
+### Deploy a single service
+
+```bash title="Terminal"
+hostess deploy -s api
+```
+
+This rebuilds and redeploys **only the `api` service**. All other services (frontend, worker, databases) continue running with their existing deployments.
+
+### Deploy multiple services
+
+```bash title="Terminal"
+hostess deploy -s api -s worker
+```
+
+Both `api` and `worker` are rebuilt and redeployed. Everything else stays unchanged.
+
+### What happens during a per-service deploy
+
+When you run `hostess deploy -s api`:
+
+1. **Only the specified services are rebuilt** — Hostess builds a new service image for `api` only
+2. **Only the specified services are redeployed** — New `api` instances replace the old ones
+3. **Other services remain unchanged** — The frontend, worker, and databases keep running on their existing deployments
+4. **Lifecycle jobs are generated for the deployed services** — If `api` has a `lifecycle.migrate` or `lifecycle.post_deploy` hook, the corresponding job is generated for that service. Other services' lifecycle jobs are not targeted by the per-service deploy.
+5. **Service discovery stays intact** — Magic variables like `${api.url}` continue to work for all services
+
+---
+
+## Monorepo Pattern
+
+In a monorepo, different services live in different directories. You can detect which directories changed and deploy only the affected services.
+
+### Example project structure
+
+```
+myapp/
+├── hostess.yml
+├── backend/          ← api service
+│   ├── Dockerfile
+│   └── main.py
+├── frontend/         ← web service
+│   ├── Dockerfile
+│   └── package.json
+├── worker/           ← worker service
+│   ├── Dockerfile
+│   └── process.py
+└── shared/           ← shared library used by api + worker
+    └── utils.py
+```
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  database:
+    type: postgres
+    resources: medium
+
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    depends_on: [database]
+    env:
+      DATABASE_URL: ${database.url}
+
+  web:
+    type: nextjs
+    build:
+      source: ./frontend
+    depends_on: [api]
+    env:
+      NEXT_PUBLIC_API_URL: ${api.external_url}
+
+  worker:
+    type: custom
+    build:
+      source: ./worker
+    depends_on: [database]
+    env:
+      DATABASE_URL: ${database.url}
+```
+
+---
+
+## Automated Change Detection in CI/CD
+
+The real power of per-service deploys comes from combining them with change detection in your CI/CD pipeline. Here is a complete GitHub Actions workflow that detects which services changed and deploys only those:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy Changed Services
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for diff
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Detect changed services
+        id: changes
+        run: |
+          # Check which directories changed between this commit and the previous one
+          CHANGED_FILES=$(git diff --name-only HEAD~1)
+
+          if echo "$CHANGED_FILES" | grep -q '^backend/'; then
+            echo "api=true" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$CHANGED_FILES" | grep -q '^frontend/'; then
+            echo "web=true" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$CHANGED_FILES" | grep -q '^worker/'; then
+            echo "worker=true" >> $GITHUB_OUTPUT
+          fi
+
+          # If shared code changed, deploy all services that use it
+          if echo "$CHANGED_FILES" | grep -q '^shared/'; then
+            echo "api=true" >> $GITHUB_OUTPUT
+            echo "worker=true" >> $GITHUB_OUTPUT
+          fi
+
+          # If hostess.yml changed, deploy everything
+          if echo "$CHANGED_FILES" | grep -q '^hostess.yml$'; then
+            echo "all=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy changed services
+        run: |
+          # If hostess.yml changed, do a full deploy
+          if [[ "${{ steps.changes.outputs.all }}" == "true" ]]; then
+            hostess deploy --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+            exit 0
+          fi
+
+          # Build the -s flags for changed services
+          SERVICES=""
+          if [[ "${{ steps.changes.outputs.api }}" == "true" ]]; then
+            SERVICES="$SERVICES -s api"
+          fi
+          if [[ "${{ steps.changes.outputs.web }}" == "true" ]]; then
+            SERVICES="$SERVICES -s web"
+          fi
+          if [[ "${{ steps.changes.outputs.worker }}" == "true" ]]; then
+            SERVICES="$SERVICES -s worker"
+          fi
+
+          # Only deploy if something changed
+          if [[ -n "$SERVICES" ]]; then
+            echo "Deploying:$SERVICES"
+            hostess deploy $SERVICES --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+          else
+            echo "No service changes detected, skipping deploy"
+          fi
+```
+
+### How the change detection works
+
+1. `git diff --name-only HEAD~1` lists all files changed in the latest commit
+2. We check if any changed files are in each service's directory
+3. If shared code changes (`shared/`), we deploy all services that depend on it
+4. If `hostess.yml` changes, we do a full deploy (since configuration affects all services)
+5. We build the `-s` flags dynamically and pass them to `hostess deploy`
+
+---
+
+## Handling Shared Dependencies
+
+When services share code (a common library, shared types, or utility modules), a change to the shared code should trigger deploys for all dependent services:
+
+```yaml title=".github/workflows/deploy.yml"
+- name: Detect changed services
+  id: changes
+  run: |
+    CHANGED_FILES=$(git diff --name-only HEAD~1)
+
+    # Direct service changes
+    echo "$CHANGED_FILES" | grep -q '^backend/' && echo "api=true" >> $GITHUB_OUTPUT
+    echo "$CHANGED_FILES" | grep -q '^frontend/' && echo "web=true" >> $GITHUB_OUTPUT
+    echo "$CHANGED_FILES" | grep -q '^worker/' && echo "worker=true" >> $GITHUB_OUTPUT
+
+    # Shared dependency — triggers api and worker
+    if echo "$CHANGED_FILES" | grep -q '^shared/'; then
+      echo "api=true" >> $GITHUB_OUTPUT
+      echo "worker=true" >> $GITHUB_OUTPUT
+    fi
+
+    # Shared types — triggers web and api
+    if echo "$CHANGED_FILES" | grep -q '^types/'; then
+      echo "api=true" >> $GITHUB_OUTPUT
+      echo "web=true" >> $GITHUB_OUTPUT
+    fi
+```
+
+---
+
+## Database Services and Per-Service Deploys
+
+<Callout type="info">
+**Database services don't need to be included in `-s` flags.** Databases (`postgres`, `redis`) persist across deployments and are not rebuilt. They are only affected by configuration changes to `hostess.yml` (e.g., changing the resource preset or adding backups), which trigger a full deploy anyway.
+</Callout>
+
+This is why the change detection examples above only check for application service directories (`backend/`, `frontend/`, `worker/`) — not the database service.
+
+---
+
+## When to Use a Full Deploy
+
+Some changes affect the entire deployment and should trigger a full `hostess deploy` (without `-s`):
+
+| Change | Why Full Deploy |
+|--------|----------------|
+| `hostess.yml` modified | Configuration changes may affect all services |
+| New service added | The new service needs to be created |
+| Service removed | The old service needs to be cleaned up |
+| Environment variables changed | Dependent services may need the new values |
+| Database resource preset changed | Database needs to be reconfigured |
+| New dependencies added (`depends_on`) | Service startup order may change |
+
+The change detection workflow above handles this by checking for `hostess.yml` changes:
+
+```yaml
+# If hostess.yml changed, deploy everything
+if echo "$CHANGED_FILES" | grep -q '^hostess.yml$'; then
+  echo "all=true" >> $GITHUB_OUTPUT
+fi
+```
+
+---
+
+## Combining with Environment Targeting
+
+Per-service deploys work with the `--env` flag:
+
+```bash title="Terminal"
+# Deploy only the API to staging
+hostess deploy -s api --env staging
+
+# Deploy API and worker to production
+hostess deploy -s api -s worker --env production
+```
+
+### Multi-environment CI/CD with per-service deploys
+
+```yaml title=".github/workflows/deploy.yml"
+# Deploy to staging on push to develop
+- name: Deploy to staging
+  if: github.ref == 'refs/heads/develop'
+  run: |
+    SERVICES=""
+    # ... build SERVICES from change detection ...
+    if [[ -n "$SERVICES" ]]; then
+      hostess deploy $SERVICES --env staging --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+    fi
+
+# Deploy to production on push to main
+- name: Deploy to production
+  if: github.ref == 'refs/heads/main'
+  run: |
+    SERVICES=""
+    # ... build SERVICES from change detection ...
+    if [[ -n "$SERVICES" ]]; then
+      hostess deploy $SERVICES --env production --no-interactive --token ${{ secrets.HOSTESS_TOKEN }}
+    fi
+```
+
+---
+
+## Quick Reference
+
+```bash title="Terminal"
+# Deploy a single service
+hostess deploy -s api
+
+# Deploy multiple services
+hostess deploy -s api -s worker -s web
+
+# Deploy specific services to a specific environment
+hostess deploy -s api --env staging
+
+# Full deploy (all services)
+hostess deploy
+
+# Per-service deploy in CI/CD
+hostess deploy -s api -s worker --env production --no-interactive --token $HOSTESS_TOKEN
+```

@@ -1,0 +1,398 @@
+---
+title: CI/CD
+description: Automate deployments with continuous integration and delivery pipelines using Hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Overview
+
+Hostess integrates with CI/CD pipelines so you can automate deployments on every push, pull request, or release. Your CI system runs `hostess deploy` with the same configuration you use locally, giving each environment a consistent deployment path.
+
+The basic workflow is:
+
+1. Generate a Personal Access Token (PAT) in Hostess Studio.
+2. Add the token as a secret in your CI system.
+3. Add a deploy step to your CI pipeline that runs `hostess deploy`.
+
+---
+
+## Personal Access Tokens
+
+Personal Access Tokens (PATs) are long-lived authentication tokens used for non-interactive access to the Hostess API. They work well for CI/CD pipelines, scripts, and automation.
+
+### Creating a Token
+
+1. Open [Hostess Studio](https://hostess.sh).
+2. Open your account page.
+3. Select **Tokens**.
+4. Click **Create token**.
+5. Enter a descriptive name for the token (e.g., `github-actions-deploy`).
+6. Click **Create token**.
+7. Copy the token immediately and store it in your CI provider's secret manager.
+
+<Callout type="warn">
+Treat Personal Access Tokens like passwords. Store them in your CI system's secret manager and keep them out of source control, plain text messages, and logs.
+</Callout>
+
+### Token Scoping
+
+PATs authenticate as the user who created them, so CI has the same organization role as that user. Owner tokens can manage the organization and deploy projects. Developer tokens can deploy, manage project resources, work with secrets, view logs, and connect to services.
+
+### Rotating Tokens
+
+To rotate a token:
+
+1. Create a new token.
+2. Update your CI configuration to use the new token.
+3. Revoke the old token.
+
+The old token continues working until you revoke it, so you can update CI secrets before cutting over.
+
+---
+
+## Authentication in CI
+
+There are two ways to authenticate Hostess in a CI environment:
+
+### Environment Variable (Recommended)
+
+Set the `HOSTESS_TOKEN` environment variable. Hostess automatically uses it when present:
+
+```bash title="Terminal"
+export HOSTESS_TOKEN=pat_your_token_here
+hostess deploy
+```
+
+This is the recommended approach because it keeps the token out of command arguments and lets CI providers mask it in logs.
+
+### --token Flag
+
+Pass the token directly as a command argument:
+
+```bash title="Terminal"
+hostess deploy --token pat_your_token_here
+```
+
+<Callout type="info">
+If both `HOSTESS_TOKEN` and `--token` are present, the `--token` flag takes precedence.
+</Callout>
+
+---
+
+## GitHub Actions
+
+GitHub Actions is the most common CI/CD system used with Hostess. Here is a complete workflow configuration:
+
+<Callout type="info">
+Use the official setup action in GitHub Actions. It installs the Hostess CLI and makes `hostess` available to later workflow steps:
+
+```yaml
+- name: Set up Hostess CLI
+  uses: howl-cloud/setup-hostess@v1
+```
+</Callout>
+
+### Basic Deploy on Push
+
+This workflow deploys to production every time code is pushed to the `main` branch:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy to Hostess
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy to production
+        run: hostess deploy --env production --no-interactive
+        env:
+          HOSTESS_TOKEN: ${{ secrets.HOSTESS_TOKEN }}
+```
+
+### Multi-Environment Deploy
+
+Deploy to staging on `develop` branch pushes and production on `main`:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy to Hostess
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy
+        run: hostess deploy --env ${{ steps.env.outputs.environment }} --no-interactive
+        env:
+          HOSTESS_TOKEN: ${{ secrets.HOSTESS_TOKEN }}
+```
+
+### Per-Service Deploy
+
+If you have a monorepo and only want to deploy changed services:
+
+```yaml title=".github/workflows/deploy-api.yml"
+name: Deploy API
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'hostess.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+
+      - name: Deploy API only
+        run: hostess deploy -s api --env production --no-interactive
+        env:
+          HOSTESS_TOKEN: ${{ secrets.HOSTESS_TOKEN }}
+```
+
+### Adding the Token to GitHub
+
+1. Go to your GitHub repository's **Settings**.
+2. Navigate to **Secrets and variables** > **Actions**.
+3. Click **New repository secret**.
+4. Set **Name** to `HOSTESS_TOKEN`.
+5. Paste your Hostess PAT as the **Secret**.
+6. Click **Add secret**.
+
+---
+
+## Per-Service Deploys in CI
+
+When you have a large stack with many services, use the `-s` (or `--service`) flag to deploy only the services that changed:
+
+```bash title="Terminal"
+# Deploy only the API and worker
+hostess deploy -s api -s worker --env production --no-interactive
+```
+
+This is particularly useful in monorepos where different services live in different directories and change independently.
+
+### Common Patterns
+
+```bash title="Deploy frontend only"
+hostess deploy -s frontend --env production --no-interactive
+```
+
+```bash title="Deploy API and its worker"
+hostess deploy -s api -s worker --env production --no-interactive
+```
+
+```bash title="Deploy all backend services"
+hostess deploy -s api -s worker -s beat --env production --no-interactive
+```
+
+<Callout type="info">
+When deploying specific services, Hostess builds and deploys the named services. Other services in your stack continue running their existing versions. Include database services when their configuration changes.
+</Callout>
+
+---
+
+## Environment Targeting
+
+Specify the target environment explicitly in CI/CD pipelines:
+
+```bash title="Terminal"
+# Deploy to production
+hostess deploy --env production --no-interactive
+
+# Deploy to staging
+hostess deploy --env staging --no-interactive
+
+# Deploy to a custom environment
+hostess deploy --env qa --no-interactive
+```
+
+<Callout type="warn">
+Use `--env` in CI pipelines so each workflow deploys to its intended environment. When `--env` is omitted, the CLI uses the first environment returned by the API, which is the most recently created environment.
+</Callout>
+
+---
+
+## Non-Interactive Mode
+
+The `--no-interactive` flag prepares `hostess deploy` for unattended CI runs. It:
+
+- Skips interactive prompts for project creation, environment selection, and confirmation dialogs.
+- Returns immediately when required information needs to be provided in the workflow.
+- Ensures the deploy command can run unattended.
+
+```bash title="Terminal"
+hostess deploy --env production --no-interactive
+```
+
+Pair `--no-interactive` with an explicit `--env` and an existing project for predictable CI runs.
+
+---
+
+## Other CI Systems
+
+### GitLab CI
+
+```yaml title=".gitlab-ci.yml"
+deploy:
+  stage: deploy
+  image: ubuntu:latest
+  script:
+    - curl -fsSL https://hostess.sh/install.sh | sh
+    - export PATH="$HOME/.local/bin:$PATH"
+    - hostess deploy --env production --no-interactive
+  variables:
+    HOSTESS_TOKEN: $HOSTESS_TOKEN
+  only:
+    - main
+```
+
+Add `HOSTESS_TOKEN` as a CI/CD variable in your GitLab project settings under **Settings > CI/CD > Variables**.
+
+### CircleCI
+
+```yaml title=".circleci/config.yml"
+version: 2.1
+
+jobs:
+  deploy:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Install Hostess CLI
+          command: |
+            curl -fsSL https://hostess.sh/install.sh | sh
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
+      - run:
+          name: Deploy to production
+          command: hostess deploy --env production --no-interactive
+
+workflows:
+  deploy:
+    jobs:
+      - deploy:
+          filters:
+            branches:
+              only: main
+```
+
+Add `HOSTESS_TOKEN` as an environment variable in your CircleCI project settings under **Project Settings > Environment Variables**.
+
+### Bitbucket Pipelines
+
+```yaml title="bitbucket-pipelines.yml"
+pipelines:
+  branches:
+    main:
+      - step:
+          name: Deploy to Hostess
+          script:
+            - curl -fsSL https://hostess.sh/install.sh | sh
+            - export PATH="$HOME/.local/bin:$PATH"
+            - hostess deploy --env production --no-interactive
+```
+
+Add `HOSTESS_TOKEN` as a repository variable in your Bitbucket settings under **Repository settings > Repository variables**.
+
+### Generic CI
+
+For any CI system, the steps are the same:
+
+1. Install the Hostess CLI: `curl -fsSL https://hostess.sh/install.sh | sh`, then ensure `~/.local/bin` is on your `PATH` for subsequent commands.
+2. Set the `HOSTESS_TOKEN` environment variable with your PAT.
+3. Run: `hostess deploy --env <environment> --no-interactive`
+
+---
+
+## Best Practices
+
+### Use Environment Variables for Tokens
+
+Always pass the token via the `HOSTESS_TOKEN` environment variable rather than the `--token` flag. Many CI systems mask environment variables in logs automatically, but command-line arguments may be visible in process lists and log output.
+
+### CLI version
+
+`howl-cloud/setup-hostess@v1` installs the latest Hostess CLI release in GitHub Actions. In non-GitHub CI systems, the install script does the same.
+
+### Separate Workflows per Environment
+
+Instead of using complex branch detection logic, create separate CI workflows for each environment:
+
+```
+.github/workflows/deploy-production.yml  → triggers on push to main
+.github/workflows/deploy-staging.yml     → triggers on push to develop
+```
+
+This makes it immediately clear what triggers each deployment and simplifies debugging.
+
+### Use Per-Service Deploys in Monorepos
+
+In monorepos with multiple services, use path filters and the `-s` flag to deploy only what changed. This reduces deploy times and avoids unnecessary rebuilds.
+
+### Test Before Deploying
+
+Add a test step before the deploy step in your CI pipeline to catch issues before they reach production:
+
+```yaml title=".github/workflows/deploy.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: howl-cloud/setup-hostess@v1
+      - run: hostess deploy --env production --no-interactive
+        env:
+          HOSTESS_TOKEN: ${{ secrets.HOSTESS_TOKEN }}
+```

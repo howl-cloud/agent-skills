@@ -1,0 +1,187 @@
+---
+title: CLI Reference
+description: Complete reference for the Hostess command-line interface — your primary tool for deploying, managing, and monitoring applications on the Hostess platform.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Overview
+
+The Hostess CLI is your primary interface for deploying and managing applications on the Hostess platform. It handles everything from deploying your stack with a single command, to managing secrets, viewing logs, and connecting to databases.
+
+```bash title="Terminal"
+hostess deploy
+```
+
+The CLI is designed around the philosophy of **Docker Compose for Production** — define your services in `hostess.yml`, run one command, and your entire stack is live.
+
+## Installation
+
+```bash title="Terminal"
+curl -fsSL https://hostess.sh/install.sh | sh
+```
+
+After installation, authenticate with your Hostess account:
+
+```bash title="Terminal"
+hostess login
+```
+
+## Common Targeting Flags
+
+Many project-scoped commands use the same targeting flags:
+
+| Flag | Short | Type | Description |
+|------|-------|------|-------------|
+| `--project` | Varies by command | `string` | Project name or slug. Deployment-scoped commands commonly provide `-p`; secrets commands use `--project` only. |
+| `--env` | Varies by command | `string` | Environment name (e.g., `production`, `staging`). Deployment-scoped commands commonly provide `-e`; `deploy` and `domains add` use `--env` only. |
+
+<Callout type="info">
+Commands that accept `--token` use it with highest priority, followed by `HOSTESS_TOKEN`, then the token saved by `hostess login`. Check each command reference page for its exact flags.
+</Callout>
+
+## Authentication Resolution
+
+For commands that accept `--token`, authentication is resolved in this order:
+
+1. **`--token` flag** — Highest priority. Use this in CI/CD pipelines.
+2. **`HOSTESS_TOKEN` environment variable** — Useful for setting a default token in your shell profile or CI environment.
+3. **Saved token** — From `hostess login`. Stored in `~/.hostess/config.json`.
+
+```bash title="Terminal"
+# CI/CD — pass token explicitly
+hostess deploy --token $HOSTESS_TOKEN
+
+# Or set as environment variable
+export HOSTESS_TOKEN="pat_abc123..."
+hostess deploy
+```
+
+## Project and Environment Resolution
+
+When a project-scoped command needs a project, the CLI resolves it in this order:
+
+**Project name:**
+1. `--project` / `-p` flag
+2. `name` field in `hostess.yml` in the current directory
+
+Environment targeting depends on the command:
+
+- `hostess deploy` and `hostess domains add` use `--env` when provided and choose an environment automatically when omitted.
+- Deployment-scoped commands such as `hostess inspect`, `hostess ps`, `hostess logs`, `hostess connect`, and `hostess backups` use the latest deployment when `--env` is omitted. Pass `--env` to select the latest deployment in that environment.
+- `hostess jobs run` requires `--env` because manual job triggers target an environment directly.
+
+## Command Aliases
+
+For faster workflow, several common subcommands have top-level aliases:
+
+| Alias | Full Command | Description |
+|-------|-------------|-------------|
+| `hostess ls` | `hostess deployments list` | List deployments |
+| `hostess list` | `hostess deployments list` | List deployments |
+| `hostess inspect` | `hostess deployments inspect` | Inspect a deployment |
+| `hostess rm` | `hostess deployments remove` | Remove a deployment |
+| `hostess delete` | `hostess deployments remove` | Remove a deployment |
+| `hostess ps` | `hostess services list` | List services |
+| `hostess logs` | `hostess services logs` | Stream service logs |
+
+Some grouped commands also include shorter nested aliases:
+
+| Alias | Full Command | Description |
+|-------|-------------|-------------|
+| `hostess dep` | `hostess deployments` | Deployment command group |
+| `hostess deployments ls` | `hostess deployments list` | List deployments |
+| `hostess deployments rm` | `hostess deployments remove` | Remove a deployment |
+| `hostess deployments delete` | `hostess deployments remove` | Remove a deployment |
+| `hostess services ls` | `hostess services list` | List services |
+| `hostess jobs ls` | `hostess jobs list` | List jobs |
+
+```bash title="Terminal"
+# These are equivalent:
+hostess deployments list
+hostess ls
+
+# These are equivalent:
+hostess services logs api --follow
+hostess logs api --follow
+```
+
+## Commands
+
+### Core Commands
+
+<Cards>
+  <Card title="deploy" href="https://docs.hostess.sh/docs/cli/deploy">
+    Deploy your services to the Hostess platform.
+  </Card>
+  <Card title="init" href="https://docs.hostess.sh/docs/cli/init">
+    Convert a docker-compose.yml to hostess.yml.
+  </Card>
+  <Card title="validate" href="https://docs.hostess.sh/docs/cli/validate">
+    Validate your hostess.yml configuration locally.
+  </Card>
+  <Card title="update" href="https://docs.hostess.sh/docs/cli/update">
+    Upgrade the Hostess CLI with the official install script.
+  </Card>
+</Cards>
+
+### Agent Skills
+
+Install or refresh the Hostess agent skill for AI coding agents:
+
+```bash title="Terminal"
+hostess skills install      # this project
+hostess skills install -g   # user-wide
+hostess skills update -g
+```
+
+See [AI Agents](https://docs.hostess.sh/docs/ai-agents) for install options, plugins, and example prompts.
+
+### Account Commands
+
+<Cards>
+  <Card title="authentication" href="https://docs.hostess.sh/docs/cli/auth">
+    Log in, log out, and show the current account.
+  </Card>
+</Cards>
+
+### Deployment Management
+
+<Cards>
+  <Card title="deployments" href="https://docs.hostess.sh/docs/cli/deployments">
+    List, inspect, and remove deployments.
+  </Card>
+  <Card title="services" href="https://docs.hostess.sh/docs/cli/services">
+    List services and stream logs.
+  </Card>
+  <Card title="connect" href="https://docs.hostess.sh/docs/cli/connect">
+    Open local tunnels or shells for service instances.
+  </Card>
+  <Card title="backups" href="https://docs.hostess.sh/docs/cli/backups">
+    Create, restore, and manage service backups.
+  </Card>
+  <Card title="jobs" href="https://docs.hostess.sh/docs/cli/jobs">
+    List, inspect, trigger, and reset top-level jobs.
+  </Card>
+</Cards>
+
+### Configuration & Management
+
+<Cards>
+  <Card title="secrets" href="https://docs.hostess.sh/docs/cli/secrets">
+    Manage encrypted secrets and .env file syncing.
+  </Card>
+  <Card title="projects" href="https://docs.hostess.sh/docs/cli/projects">
+    Create, list, and manage projects.
+  </Card>
+  <Card title="orgs" href="https://docs.hostess.sh/docs/cli/orgs">
+    Manage organizations, members, and invitations.
+  </Card>
+  <Card title="domains" href="https://docs.hostess.sh/docs/cli/domains">
+    Add and manage custom domains.
+  </Card>
+  <Card title="environments" href="https://docs.hostess.sh/docs/cli/environments">
+    Create, update, and delete project environments.
+  </Card>
+</Cards>

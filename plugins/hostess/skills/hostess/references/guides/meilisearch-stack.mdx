@@ -1,0 +1,261 @@
+---
+title: Deploy the Meilisearch Stack
+description: Deploy the maintained Meilisearch example from howl-cloud/awesome-hostess.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
+
+This guide deploys the Meilisearch stack from the maintained [`howl-cloud/awesome-hostess`](https://github.com/howl-cloud/awesome-hostess) examples repo. Clone the example, create the search master key, validate it, and deploy.
+
+## What You'll Deploy
+
+The `awesome-hostess/meilisearch` module contains the Hostess deployment config, a local Compose mirror, a seed job, and a small Next.js search console:
+
+<Files>
+  <Folder name="meilisearch" defaultOpen>
+    <File name="hostess.yml" />
+    <File name="docker-compose.yml" />
+    <File name="README.md" />
+    <Folder name="seed">
+      <File name="books.json" />
+      <File name="seed.mjs" />
+    </Folder>
+    <Folder name="ui">
+      <File name="Dockerfile" />
+      <File name="package.json" />
+      <Folder name="app" />
+      <Folder name="public" />
+    </Folder>
+  </Folder>
+</Files>
+
+| Service | Role |
+|---------|------|
+| `meilisearch` | Private persistent Meilisearch engine |
+| `ui` | Public Next.js search console |
+| `seed-meilisearch` | One-shot job that loads the demo `books` index |
+
+The public service is `ui`. Meilisearch stays private and is reached by the UI and seed job through `${meilisearch.url}`.
+
+<Callout type="info">
+  The maintained example uses `getmeili/meilisearch:v1.37` and a published `ghcr.io/howl-cloud/awesome-hostess/meilisearch-ui:latest` UI image. The Compose mirror builds the UI from the local `ui/` directory.
+</Callout>
+
+## Prerequisites
+
+- Hostess CLI installed and authenticated with `hostess login`
+- `openssl`
+
+<Steps>
+
+<Step>
+### Clone the example module
+
+Clone the examples repo and move into the Meilisearch module:
+
+```bash title="Terminal"
+git clone https://github.com/howl-cloud/awesome-hostess.git
+cd awesome-hostess/meilisearch
+```
+
+All commands in the rest of this guide run from `awesome-hostess/meilisearch`.
+</Step>
+
+<Step>
+### Create the Meilisearch master key
+
+Meilisearch requires a master key in production mode. Generate one strong value and store it in Hostess:
+
+```bash title="Terminal"
+hostess secrets add MEILI_MASTER_KEY --value "$(openssl rand -base64 32)"
+```
+
+<Callout type="warn">
+  Keep this value stable. The UI and seed job both need the same `MEILI_MASTER_KEY` to access the private search engine.
+</Callout>
+</Step>
+
+<Step>
+### Validate the module
+
+Validate the maintained `hostess.yml` before deploying:
+
+```bash title="Terminal"
+hostess validate
+```
+
+You should see:
+
+```text
+✓ Configuration is valid
+```
+
+If you want to compare the local Compose mirror too:
+
+```bash title="Terminal"
+docker compose config --quiet
+```
+</Step>
+
+<Step>
+### Deploy the stack
+
+Deploy from the module directory:
+
+```bash title="Terminal"
+hostess deploy --env preview
+```
+
+If this is your first deployment from this directory, Hostess prompts you to create a project. The deployment output includes the public `ui` URL:
+
+```text
+✓ Deployment complete
+
+  ui: https://meilisearch-ui-abc123.hostess.run
+```
+</Step>
+
+<Step>
+### Open the search UI
+
+Open the `ui` URL from the deployment output:
+
+```text
+https://meilisearch-ui-abc123.hostess.run
+```
+
+Enter the `MEILI_MASTER_KEY` value you stored in Hostess and select the seeded `books` index.
+</Step>
+
+<Step>
+### Smoke-test the deployment
+
+Check the public UI:
+
+```bash title="Terminal"
+curl -I https://meilisearch-ui-abc123.hostess.run
+```
+
+Then search for a book title in the UI. The `seed-meilisearch` job loads the demo documents after Meilisearch is healthy, and the UI queries the private engine through `${meilisearch.url}`.
+</Step>
+
+</Steps>
+
+## Hostess Configuration Highlights
+
+The maintained `hostess.yml` keeps the search engine private and makes the UI public:
+
+```yaml title="hostess.yml excerpt"
+services:
+  meilisearch:
+    type: custom
+    image: getmeili/meilisearch:v1.37
+    retention: permanent
+    ports:
+      - 7700
+    resources: medium
+    health:
+      http: /health
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    env:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${secret:MEILI_MASTER_KEY}
+      MEILI_HTTP_ADDR: 0.0.0.0:7700
+      MEILI_DB_PATH: /data/meili_data
+      MEILI_NO_ANALYTICS: "true"
+
+  ui:
+    type: nextjs
+    image: ghcr.io/howl-cloud/awesome-hostess/meilisearch-ui:latest
+    depends_on:
+      meilisearch:
+        condition: healthy
+      seed-meilisearch:
+        condition: completed
+    ports:
+      - port: 3000
+        public: true
+    resources: small
+    health:
+      http: /
+    env:
+      MEILI_URL: ${meilisearch.url}
+```
+
+The seed job mounts the local seed files into a one-shot Node process:
+
+```yaml title="hostess.yml excerpt"
+jobs:
+  seed-meilisearch:
+    image: node:22-alpine
+    depends_on:
+      meilisearch:
+        condition: healthy
+    run: once
+    timeout: 2m
+    files:
+      - name: seed-script
+        mount: /tmp/seed.mjs
+        source: ./seed/seed.mjs
+      - name: seed-documents
+        mount: /tmp/books.json
+        source: ./seed/books.json
+    env:
+      MEILI_URL: ${meilisearch.url}
+      MEILI_MASTER_KEY: ${secret:MEILI_MASTER_KEY}
+    entrypoint: ["node"]
+    command: ["/tmp/seed.mjs"]
+```
+
+If you change the seed files, Hostess treats the job definition as changed and runs it again on the next deploy.
+
+## Run It Locally With Compose
+
+The example includes a local Compose mirror:
+
+```bash title="Terminal"
+docker compose up
+```
+
+The local UI listens on `http://localhost:3000`; Meilisearch listens on `http://localhost:7700`. In the local UI, paste this default key unless you set `MEILI_MASTER_KEY` yourself:
+
+```text
+meili-local-master-key
+```
+
+## Updating The Stack
+
+Because this guide uses `howl-cloud/awesome-hostess`, stack updates come from the examples repo:
+
+```bash title="Terminal"
+cd awesome-hostess
+git pull
+cd meilisearch
+hostess validate
+hostess deploy --env preview
+```
+
+For changes that only affect the UI, deploy that service:
+
+```bash title="Terminal"
+hostess deploy --env preview -s ui
+```
+
+For search engine, seed data, persistence, or dependency changes, redeploy the full stack.
+
+## Notes
+
+- `MEILI_MASTER_KEY` is the only required user-provided secret in the maintained example.
+- `meilisearch` is private by default. Use the public UI or `hostess connect` when you need local access.
+- The demo seed job loads a `books` index. Replace `seed/books.json` and `seed/seed.mjs` when you want application-specific data.
+- The Hostess config uses the published UI image; the Compose mirror builds from local source.
+
+## What's Next
+
+- **[Managing Secrets](https://docs.hostess.sh/docs/guides/managing-secrets)** - Rotate the Meilisearch master key safely
+- **[Connect to Services](https://docs.hostess.sh/docs/guides/connect-to-services)** - Debug the private Meilisearch service from your machine
+- **[Custom Domains](https://docs.hostess.sh/docs/guides/custom-domains)** - Put your own domain in front of the search UI

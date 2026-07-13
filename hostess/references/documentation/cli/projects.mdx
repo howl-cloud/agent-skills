@@ -1,0 +1,206 @@
+---
+title: hostess projects
+description: Create, list, and manage Hostess projects within your organizations.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Description
+
+Manage Hostess projects within your organizations. A project corresponds to one `hostess.yml` configuration and contains all the services, deployments, environments, secrets, and domains for your application stack.
+
+---
+
+## projects list
+
+List all projects in an organization.
+
+### Usage
+
+```bash title="Terminal"
+hostess projects list [flags]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+
+### Examples
+
+```bash title="Terminal"
+hostess projects list
+```
+
+```
+Projects in 'my-org':
+
+NAME              DESCRIPTION
+───────────────────────────────────────────────────
+my-app            E-commerce platform
+blog              Company blog
+internal-tools    Admin dashboards
+```
+
+```bash title="Terminal"
+# List projects in a specific organization
+hostess projects list --org other-org
+```
+
+---
+
+## projects create
+
+Create a new project in an organization.
+
+### Usage
+
+```bash title="Terminal"
+hostess projects create <name> [flags]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+| `--description` | `string` | | Project description |
+
+### Examples
+
+```bash title="Terminal"
+# Create a project in the current org
+hostess projects create my-new-app
+```
+
+```
+✓ Project 'my-new-app' created in organization 'my-org'
+```
+
+```bash title="Terminal"
+# Create with a description
+hostess projects create my-new-app --description "Next-gen e-commerce platform"
+
+# Create in a specific organization
+hostess projects create my-new-app --org other-org
+```
+
+<Callout type="info">
+You can also create projects during `hostess deploy`. In an interactive terminal, the CLI offers to create a new project when needed.
+</Callout>
+
+---
+
+## projects info
+
+Display detailed information about a project.
+
+### Usage
+
+```bash title="Terminal"
+hostess projects info <name> [flags]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+
+### Examples
+
+```bash title="Terminal"
+hostess projects info my-app
+```
+
+```
+Project: my-app
+ID: proj_abc123def456
+Organization ID: org_xyz789
+Description: E-commerce platform
+```
+
+---
+
+## projects update
+
+Update a project's name or description.
+
+### Usage
+
+```bash title="Terminal"
+hostess projects update <name> [flags]
+```
+
+At least one of `--name` or `--description` is required.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+| `--name` | `string` | | New project name |
+| `--description` | `string` | | New project description |
+
+### Examples
+
+```bash title="Terminal"
+# Rename a project
+hostess projects update my-app --name my-app-v2
+```
+
+```
+✓ Project updated
+  Name: my-app-v2
+```
+
+```bash title="Terminal"
+# Update description
+hostess projects update my-app --description "Updated platform"
+
+# Update both
+hostess projects update my-app --name new-name --description "New description"
+```
+
+---
+
+## projects delete
+
+Permanently delete a project and all its resources.
+
+### Usage
+
+```bash title="Terminal"
+hostess projects delete <name> [flags]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--org` | `string` | Current organization | Organization slug |
+| `--force` | `bool` | `false` | Skip confirmation prompt |
+
+### Examples
+
+```bash title="Terminal"
+# Delete with confirmation
+hostess projects delete old-project
+```
+
+```
+Are you sure you want to delete project 'old-project'?
+This will delete all environments, deployments, and cannot be undone.
+Type 'yes' to confirm: yes
+✓ Project 'old-project' deleted
+```
+
+```bash title="Terminal"
+# Delete without confirmation
+hostess projects delete old-project --force
+```
+
+<Callout type="warn">
+Deleting a project permanently removes all environments, deployments, services, secrets, and domains associated with it.
+</Callout>

@@ -1,0 +1,212 @@
+---
+title: Authentication
+description: Log in to Hostess, manage your session, and configure authentication for CI/CD pipelines.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+Before you can deploy or manage projects, you need to authenticate with Hostess. The CLI supports interactive login for local development and token-based authentication for CI/CD pipelines.
+
+## Logging in
+
+Run the `login` command to start the authentication flow:
+
+```bash title="Terminal"
+hostess login
+```
+
+`hostess login` opens a one-time browser link. Sign in or create an account in Studio, approve the CLI login, then return to your terminal.
+
+<Steps>
+<Step>
+
+### Open the browser link
+
+The CLI prints the login URL and opens it in your browser when possible:
+
+```
+Opening your browser to sign in to Hostess...
+
+If your browser did not open, visit:
+https://hostess.sh/cli/login/abc123
+
+Waiting for browser login...
+```
+
+</Step>
+<Step>
+
+### Sign in or create an account
+
+Use email or GitHub in Studio. If you are new to Hostess, create your account there and continue back to the CLI login approval page.
+
+</Step>
+<Step>
+
+### Approve the CLI login
+
+Studio shows the account that will be connected to the CLI. Click **Approve CLI login**.
+
+</Step>
+<Step>
+
+### Login complete
+
+The terminal finishes once the browser approval is received:
+
+```
+Signed in as you@example.com
+```
+
+Your authentication token is saved locally and will be used for all subsequent CLI commands.
+
+</Step>
+</Steps>
+
+For shells where opening a browser is inconvenient, print the link only:
+
+```bash title="Terminal"
+hostess login --no-browser
+```
+
+To switch accounts without logging out first:
+
+```bash title="Terminal"
+hostess login --force
+```
+
+## Checking your current session
+
+To see which Hostess user your CLI token belongs to (from `hostess login` or a saved session):
+
+```bash title="Terminal"
+hostess whoami
+```
+
+The command prints a short summary with **Email** and **Username** only — it does **not** show the current organization or your role there. (Username may be empty if your account has no username set.)
+
+Example (layout is a rounded bordered panel in the terminal; labels and values match the output):
+
+```
+┌──────────────────────────────────────────────────┐
+│ Current User                                     │
+│                                                  │
+│ Email:      you@example.com                      │
+│ Username:   janedoe                              │
+└──────────────────────────────────────────────────┘
+```
+
+To see **organization** context, use [`hostess orgs list`](https://docs.hostess.sh/docs/cli/orgs) (current org is marked with **✓**) or [`hostess orgs info`](https://docs.hostess.sh/docs/cli/orgs).
+
+## Logging out
+
+To clear your stored credentials and end your session:
+
+```bash title="Terminal"
+hostess logout
+```
+
+```
+✓ Logged out successfully
+```
+
+This removes your authentication token from the local configuration file. You will need to run `hostess login` again to use the CLI.
+
+## Token storage
+
+Hostess stores your authentication token in a local configuration file at:
+
+```
+~/.hostess/config.json
+```
+
+This file stores your session token (and optional organization context). An example of the file structure:
+
+```json title="~/.hostess/config.json"
+{
+  "token": "hst_abc123..."
+}
+```
+
+<Callout type="warn" title="Keep your config file secure">
+The `config.json` file contains your authentication token. Do not share this file, commit it to version control, or expose it in logs. Treat it like a password.
+</Callout>
+
+## CI/CD authentication
+
+For automated pipelines (GitHub Actions, GitLab CI, etc.), you do not want to use interactive login. Instead, use a **Personal Access Token (PAT)** or a CI/CD token.
+
+### Creating a token
+
+Create a **Personal Access Token** in [Hostess Studio](https://hostess.sh): open your account or organization settings and use the **Personal Access Tokens** section. Copy the token once — it is not shown again — and store it in your CI provider’s secret store (for example `HOSTESS_TOKEN` in GitHub Actions).
+
+### Using a token
+
+There are two ways to pass a token to the CLI in non-interactive environments:
+
+<Tabs items={["Environment Variable", "CLI Flag"]}>
+<Tab value="Environment Variable">
+
+Set the `HOSTESS_TOKEN` environment variable. This is the recommended approach for CI/CD:
+
+```bash title="Terminal"
+export HOSTESS_TOKEN=hst_ci_abc123...
+hostess deploy
+```
+
+In GitHub Actions:
+
+```yaml title=".github/workflows/deploy.yml"
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Hostess CLI
+        uses: howl-cloud/setup-hostess@v1
+      - name: Deploy
+        env:
+          HOSTESS_TOKEN: ${{ secrets.HOSTESS_TOKEN }}
+        run: hostess deploy --no-interactive
+```
+
+</Tab>
+<Tab value="CLI Flag">
+
+Pass the token directly with the `--token` flag:
+
+```bash title="Terminal"
+hostess deploy --token hst_ci_abc123...
+```
+
+<Callout type="warn">
+Passing tokens via command-line flags can expose them in shell history and process listings. Prefer the environment variable approach for CI/CD.
+</Callout>
+
+</Tab>
+</Tabs>
+
+### Auth resolution order
+
+When you run a CLI command, Hostess resolves your authentication token in the following order:
+
+| Priority | Source | Description |
+|---|---|---|
+| 1 (highest) | `--token` flag | Token passed directly on the command line |
+| 2 | `HOSTESS_TOKEN` env var | Token set as an environment variable |
+| 3 (lowest) | `~/.hostess/config.json` | Token stored from `hostess login` |
+
+The first token found is used. If no token is found at any level, the CLI will prompt you to log in (or fail with an error in non-interactive mode).
+
+<Callout type="warn" title="Token security best practices">
+- **Never commit tokens** to your repository. Use your CI/CD platform's secret management (e.g., GitHub Secrets, GitLab CI Variables).
+- **Rotate tokens regularly** and revoke any tokens you no longer need.
+- **Use scoped tokens** for CI/CD rather than your personal login token.
+- **Add `~/.hostess/` to your global `.gitignore`** to prevent accidental commits.
+</Callout>
+
+## Next steps
+
+Now that you are authenticated, follow the [Quick Start](https://docs.hostess.sh/docs/quick-start) to deploy your first application.
