@@ -1,19 +1,19 @@
 ---
 title: URL Routing
-description: How Hostess generates and routes URLs for your services — stable URLs, deployment URLs, multi-port, and custom domains.
+description: How Hostess generates and routes URLs for your services.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 ## Overview
 
-Hostess gives public application services generated HTTPS URLs and keeps private services reachable from other services through magic variables. You can also attach custom domains when you want branded URLs.
+Hostess gives generated HTTPS URLs for application services with pulic or team-scoped visibility. Private services stay reachable from other services through magic variables (and locally via `hostess connect`). You can also attach custom domains when you want branded URLs.
 
 There are several types of URLs in Hostess:
 
 | URL Type | Description | Changes Between Deploys? |
 |---|---|---|
-| **Stable URL** | Points to the active version of a public service | Same URL, updated target |
+| **Stable URL** | Points to the active version of a public or team service | Same URL, updated target |
 | **Deployment URL** | Points to a deployed commit or deployment-specific fallback | Same URL for that commit/fallback |
 | **Internal URL** | Used through magic variables for service-to-service communication | Stable within the environment |
 | **Custom Domain** | Your own branded domain name | Stable |
@@ -22,7 +22,7 @@ There are several types of URLs in Hostess:
 
 ## Auto-Generated URL Format
 
-Public application services and public ports receive stable URLs on the `hostess.run` domain using this format:
+Application services and ports with public or team visibility receive stable URLs on the `hostess.run` domain using this format:
 
 ```
 https://{project}-{service}-{nanoID}.hostess.run
@@ -42,7 +42,7 @@ https://my-app-api-a3x9d2m1.hostess.run
 https://my-app-minio-p4k8n7v2.hostess.run
 ```
 
-These URLs use HTTPS with certificates provisioned automatically.
+These URLs use HTTPS with certificates provisioned automatically. Team URLs use the same format and require [Hostess sign-in](https://docs.hostess.sh/docs/service-visibility#team-visibility) before the app loads.
 
 ---
 
@@ -60,7 +60,7 @@ Because the NanoID persists, you can share service URLs, bookmark them, or use t
 
 ## Stable URLs
 
-Stable URLs are the primary generated URLs you share with users, configure in callbacks, and use for public traffic. They route to the active version of a public service.
+Stable URLs are the primary generated URLs you share with users, configure in callbacks, and use for browser traffic. They route to the active version of a public or team service.
 
 ```
 https://my-app-api-a3x9d2m1.hostess.run
@@ -81,7 +81,7 @@ This keeps stable URLs pointed at the active version while new deployments are p
 
 Stable URLs are displayed in several places:
 
-- **Deploy output** — After a successful `hostess deploy`, the CLI prints public service URLs.
+- **Deploy output** — After a successful `hostess deploy`, the CLI prints service URLs for public and team services.
 - **Studio** — The project dashboard and service detail pages show service URLs.
 - **`hostess inspect`** — Run this command to see deployment details and URLs.
 
@@ -89,7 +89,7 @@ Stable URLs are displayed in several places:
 
 ## Deployment URLs
 
-Deployment URLs are generated for public application services and public ports. When git metadata is available, they use the short git commit SHA instead of the NanoID:
+Deployment URLs are generated for public and team application services (and matching ports). When git metadata is available, they use the short git commit SHA instead of the NanoID:
 
 ```
 https://{project}-{service}-{shortSHA}.hostess.run
@@ -125,7 +125,7 @@ Deployment URLs remain available while the corresponding deployment is retained.
 
 ## Multi-Port URLs
 
-When a service exposes multiple public ports, each public port gets its own URL. The first public port uses the standard URL format. Subsequent public ports get a suffix:
+When a service exposes multiple public or team ports, each of those ports gets its own URL. The first such port uses the standard URL format. Subsequent ports get a suffix:
 
 ```
 Port 1 (primary): https://{project}-{service}-{nanoID}.hostess.run
@@ -145,9 +145,9 @@ services:
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
       - port: 9000
-        public: true
+        visibility: public
       - port: 9001
-        public: true
+        visibility: public
 ```
 
 The resulting URLs:
@@ -182,7 +182,7 @@ services:
       - api.myapp.com
 ```
 
-After deploying a public service:
+After deploying a public or team service:
 
 ```
 Auto-generated: https://my-app-api-a3x9d2m1.hostess.run
@@ -191,7 +191,7 @@ Custom domain:  https://api.myapp.com                     ← works after DNS se
 
 Adding, retargeting, or removing a domain through Studio or `hostess domains` updates routing immediately — no redeploy needed. If you retarget a domain to a different service or environment, the change takes effect right away and DNS verification carries over.
 
-See [Custom Domains](https://docs.hostess.sh/docs/custom-domains) for the full setup guide, including DNS configuration and TLS certificates.
+Team services keep Hostess sign-in on both the generated URL and any custom domain. See [Custom Domains](https://docs.hostess.sh/docs/custom-domains) for the full setup guide, including DNS configuration and TLS certificates. For who can open team URLs, see [Service Visibility](https://docs.hostess.sh/docs/service-visibility).
 
 ---
 
@@ -238,11 +238,11 @@ Internal URLs are the right default for server-side service-to-service calls bec
 
 ## External URLs
 
-External URLs are the publicly accessible, HTTPS URLs that users, browsers, webhooks, and external services use to reach your services. They include both auto-generated `*.hostess.run` URLs and custom domains.
+External URLs are the HTTPS URLs that users, browsers, webhooks, and external services use to reach your services. They include both auto-generated `*.hostess.run` URLs and custom domains.
 
 ### When to Use External URLs
 
-Use external URLs (via `${service.external_url}`) when the caller is **outside Hostess**. The target service or port should be public:
+Use external URLs (via `${service.external_url}`) when the caller is **outside Hostess**:
 
 ```yaml title="hostess.yml"
 services:
@@ -257,7 +257,7 @@ services:
 
   api:
     type: fastapi
-    public: true
+    visibility: public
     build:
       source: ./backend
 ```
@@ -280,7 +280,7 @@ There are several ways to find your service URLs:
 
 ### Deploy Output
 
-After a successful deployment, the CLI prints public service URLs and connection guidance for private services:
+After a successful deployment, the CLI prints URLs for public and team services and connection guidance for private services:
 
 ```bash title="Terminal"
 $ hostess deploy
@@ -333,9 +333,9 @@ Here is a complete reference of all URL types and when to use each:
 
 | URL Type | Format | Use Case |
 |---|---|---|
-| Stable URL | `https://{project}-{service}-{nanoID}.hostess.run` | Public service traffic, sharing with users |
+| Stable URL | `https://{project}-{service}-{nanoID}.hostess.run` | Public or team service traffic |
 | Deployment URL | `https://{project}-{service}-{shortSHA}.hostess.run` | PR previews, rollback verification |
-| Multi-port URL | `https://{project}-{service}-{nanoID}-{N}.hostess.run` | Accessing additional public ports |
+| Multi-port URL | `https://{project}-{service}-{nanoID}-{N}.hostess.run` | Additional public or team ports |
 | Internal URL | `${service.url}` | Service-to-service communication |
 | Custom domain | `https://yourdomain.com` | Branded production URLs |
 

@@ -20,9 +20,10 @@
     "---Concepts---",
     "service-types",
     "environments",
+    "service-visibility",
+    "url-routing",
     "custom-domains",
     "git-integration",
-    "ci-cd",
-    "url-routing"
+    "ci-cd"
   ]
 }

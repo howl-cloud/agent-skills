@@ -150,10 +150,11 @@ Load only the page(s) needed for the current task. Paths are relative to this sk
 - [Custom](references/documentation/service-types/custom.mdx): Deploy any containerized application on Hostess using the custom service type — workers, proxies, ML models, and more.
 
 - [Environments](references/documentation/environments.mdx): Target production, preview, staging, and custom environments with the CLI and configure per-environment domains.
+- [Service Visibility](references/documentation/service-visibility.mdx): Control who can reach each service.
+- [URL Routing](references/documentation/url-routing.mdx): How Hostess generates and routes URLs for your services.
 - [Custom Domains](references/documentation/custom-domains.mdx): Add custom domains to your services with automatic HTTPS via Let's Encrypt.
 - [Git Integration](references/documentation/git-integration.mdx): Connect a GitHub repository to deploy automatically on push and get per-PR preview environments.
 - [CI/CD](references/documentation/ci-cd.mdx): Automate deployments with continuous integration and delivery pipelines using Hostess.
-- [URL Routing](references/documentation/url-routing.mdx): How Hostess generates and routes URLs for your services — stable URLs, deployment URLs, multi-port, and custom domains.
 
 ### Guides
 

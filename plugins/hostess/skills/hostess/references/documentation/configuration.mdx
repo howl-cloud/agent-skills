@@ -85,7 +85,8 @@ Each service is keyed by a **name** (the YAML key under `services:`). Names must
 | `files` | array | No | Read-only file mounts from local files, inline content, or Hostess secrets. |
 | `depends_on` | array or object | No | Services or top-level jobs this service depends on. |
 | `domains` | array | No | Custom domains (production shorthand). |
-| `ports` | array | No | Ports to expose. Defaults depend on service type. |
+| `visibility` | string | No | Who can reach the service: `public`, `team`, or `private`. See [Visibility](#visibility). |
+| `ports` | array | No | Ports to expose. Defaults depend on service type. Optional per-port `visibility`. |
 | `resources` | string or object | No | Resource allocation. Defaults to `medium`. |
 | `replicas` | number or object | No | Replica count or autoscaling config. Defaults to `1`. |
 | `health` | object | No | Health check configuration. Defaults depend on service type. |
@@ -430,6 +431,31 @@ CNAME myapp.com → ingress.hostess.run
 
 ---
 
+### Visibility
+
+The `visibility` field controls who can open a service’s HTTPS URL:
+
+| Value | HTTPS URL | Access |
+|---|---|---|
+| `public` | Yes | Anyone |
+| `team` | Yes | Organization members after Hostess sign-in |
+| `private` | No | Other services via magic variables; local access with `hostess connect` |
+
+Defaults: `nextjs` → `public`; other types → `private`. Set `visibility: team` explicitly when you want a sign-in–gated URL.
+
+```yaml title="hostess.yml"
+services:
+  dashboard:
+    type: nextjs
+    build:
+      source: ./dashboard
+    visibility: team
+```
+
+Full behavior, Studio Access activity, and custom-domain notes are in [Service Visibility](https://docs.hostess.sh/docs/service-visibility).
+
+---
+
 ### Ports
 
 The `ports` field specifies which ports your service exposes. Most of the time you do not need to set this — the service type provides a sensible default.
@@ -459,7 +485,7 @@ You need to set `ports` when:
 
 #### Multi-Port Services
 
-Some services expose multiple ports. List them all:
+Some services expose multiple ports. List them all, and optionally set `visibility` per port:
 
 ```yaml title="hostess.yml"
 services:
@@ -467,10 +493,14 @@ services:
     type: custom
     image: minio/minio
     command: ["server", "/data", "--console-address", ":9001"]
-    ports: [9000, 9001]
+    ports:
+      - port: 9000
+        visibility: public
+      - port: 9001
+        visibility: team
 ```
 
-Each port gets its own external URL:
+Each public or team port gets its own external URL:
 
 ```
 Port 1 (9000): https://my-app-minio-p4k8n7v2.hostess.run
