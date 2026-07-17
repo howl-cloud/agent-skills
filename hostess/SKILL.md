@@ -141,6 +141,7 @@ Load only the page(s) needed for the current task. Paths are relative to this sk
 - [AI Agents](references/documentation/ai-agents.mdx): Use Hostess directly from Claude Code, Codex, Cursor, and other agents
 #### Concepts
 
+- [Service Types](references/documentation/service-types.mdx): Supported Hostess service types and where to find type-specific configuration, defaults, and features.
 #### Service Types
 
 - [Next.js](references/documentation/service-types/nextjs.mdx): Deploy Next.js applications with automatic build optimization, server-side rendering, and API routes on Hostess.

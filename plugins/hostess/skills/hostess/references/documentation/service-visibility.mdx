@@ -13,7 +13,7 @@ Every service has a **visibility** setting that controls who can open its URL. S
 |---|---|---|
 | **public** | Yes | Anyone |
 | **team** | Yes | Organization members who can view the service, after Hostess sign-in |
-| **private** | No | Other services in your stack (via magic variables); local access with [`hostess connect`](https://docs.hostess.sh/docs/guides/connect-to-services) |
+| **private** | No | Other services in your stack (via magic variables); local access with [`hostess connect`](/guides/connect-to-services) |
 
 ---
 
@@ -89,7 +89,7 @@ When someone opens that URL:
 2. After sign-in, Hostess checks that they belong to the **organization that owns the project** and that their role can view the service.
 3. Allowed members reach the app. Signed-in users who are not in the organization are denied.
 
-Invite and manage members on the organization [Team](https://docs.hostess.sh/docs/guides/team-management) page so the right people can open team URLs.
+Invite and manage members on the organization [Team](/guides/team-management) page so the right people can open team URLs.
 
 <Callout type="info">
 Custom domains on team services keep the same Hostess sign-in gate. Branding the hostname does not change who is allowed in — see [Custom Domains](https://docs.hostess.sh/docs/custom-domains).
@@ -111,6 +111,6 @@ Use Access to confirm that the right teammates are getting in and to spot denied
 
 - [URL Routing](https://docs.hostess.sh/docs/url-routing) — stable URLs, deployment URLs, and magic variables
 - [Custom Domains](https://docs.hostess.sh/docs/custom-domains) — branded hostnames (sign-in still applies for team)
-- [Team Management](https://docs.hostess.sh/docs/guides/team-management) — invite members and assign roles
+- [Team Management](/guides/team-management) — invite members and assign roles
 - [Configuration Reference](https://docs.hostess.sh/docs/configuration#visibility) — `visibility` field details
-- [Connect to Services](https://docs.hostess.sh/docs/guides/connect-to-services) — local access for private services
+- [Connect to Services](/guides/connect-to-services) — local access for private services

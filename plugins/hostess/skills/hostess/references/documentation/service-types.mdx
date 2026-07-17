@@ -1,0 +1,30 @@
+---
+title: Service Types
+description: Supported Hostess service types and where to find type-specific configuration, defaults, and features.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+Hostess services declare a `type` in `hostess.yml`. The type selects smart defaults for ports, health checks, resources, and platform features.
+
+## Supported types
+
+<Cards>
+  <Card title="Next.js" href="https://docs.hostess.sh/docs/service-types/nextjs">
+    React full-stack apps with automatic build defaults, routing, and API Insights.
+  </Card>
+  <Card title="FastAPI" href="https://docs.hostess.sh/docs/service-types/fastapi">
+    Python APIs with health-check defaults, playground links, and API Insights.
+  </Card>
+  <Card title="PostgreSQL" href="https://docs.hostess.sh/docs/service-types/postgres">
+    Managed Postgres with connection strings, scoped databases, extensions, and backups.
+  </Card>
+  <Card title="Redis" href="https://docs.hostess.sh/docs/service-types/redis">
+    Managed Redis with connection strings, modules, ACLs, and backups.
+  </Card>
+  <Card title="Custom" href="https://docs.hostess.sh/docs/service-types/custom">
+    Generic containers with optional persistent storage and the same lifecycle hooks.
+  </Card>
+</Cards>
+
+For the full `type` field reference in context of `hostess.yml`, see [Configuration → Service Types](https://docs.hostess.sh/docs/configuration#service-types).
