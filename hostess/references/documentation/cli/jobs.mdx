@@ -23,8 +23,9 @@ hostess jobs [command] [flags]
 |---|---|
 | `list` / `ls` | List jobs in the latest deployment |
 | `inspect <job>` | Show job details |
-| `runs <job>` | List recent runs for a cron job |
+| `runs <job>` | List recent runs with their run IDs |
 | `run <job>` | Trigger a job manually or reset a `once` job for the next deploy |
+| `logs <job>` | Stream logs for a job's latest run |
 
 ## Targeting Flags
 
@@ -44,6 +45,16 @@ For `hostess jobs run`, set `--env` explicitly because manual job triggers targe
 | `--set-env` | `string[]` | | Override an environment value for this run; repeat for multiple values |
 | `--env-from` | `string` | | Load run overrides from a `KEY=VALUE` file |
 | `--allow-secret-override` | `bool` | `false` | Allow `--set-env` to replace a secret-backed value |
+| `--follow` / `-f` | `bool` | `false` | Stream the triggered run's logs until it finishes |
+
+## Logs Flags
+
+| Flag | Short | Type | Default | Description |
+|---|---|---|---|---|
+| `--run` | | `string` | Latest run | Run ID to stream, from `hostess jobs runs` |
+| `--follow` | `-f` | `bool` | `true` | Stream new log lines as they arrive |
+| `--tail` | `-n` | `int` | `500` | Number of trailing lines to show |
+| `--timestamps` | | `bool` | `false` | Prefix each line with its timestamp |
 
 ## Examples
 
@@ -75,6 +86,23 @@ Re-run a `once` job on the next deploy:
 ```bash title="Terminal"
 hostess jobs run setup --project my-app --env production --next-deploy
 ```
+
+Trigger a job and follow its logs until it finishes:
+
+```bash title="Terminal"
+hostess jobs run rebuild-search --project my-app --env production --follow
+```
+
+Stream logs for the latest run, or a specific past run:
+
+```bash title="Terminal"
+hostess jobs logs rebuild-search --project my-app --env production
+hostess jobs runs daily-report --project my-app --env production
+hostess jobs logs daily-report --run <run-id> --project my-app --env production
+```
+
+Job logs are persisted when a run finishes, so `hostess jobs logs` works for
+past runs — including old cron fires — not just runs that are currently live.
 
 <Callout type="warn">
 `--set-env` can override literal job environment values. To override a secret-backed value, you must also pass `--allow-secret-override`.

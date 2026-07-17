@@ -381,6 +381,7 @@ The Jobs page on a deployment shows top-level `jobs:` entries declared in `hoste
 - **Job detail** — Status, run policy, started and completed timestamps, duration, schedule, last fire, next fire, and trigger source when those fields are available.
 - **Configuration** — The job definition rendered as formatted JSON when configuration details are available.
 - **Controls** — Owners and developers can run eligible jobs immediately and mark completed `once` jobs to run on the next deploy.
+- **Logs** — The job detail page streams the run's logs live, with search, pause, auto-scroll, and download. Cron jobs get a run picker to view logs from individual fires. Logs are persisted when a run finishes, so past runs — including old cron fires — remain viewable after their workloads are cleaned up. Viewing logs requires a role with log access.
 
 ![Job detail](https://docs.hostess.sh/images/studio/job-detail.png)
 
