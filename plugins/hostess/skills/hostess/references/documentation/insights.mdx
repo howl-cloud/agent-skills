@@ -13,6 +13,8 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Insights are **on by default**. You don't configure a metrics backend, run a collector, or expose a scrape endpoint — Hostess wires all of that up for you. You see data in [Studio](https://docs.hostess.sh/docs/studio) on each service's **Metrics** tab.
 
+Insights observes the **server side**. For what happens in your visitors' browsers — audience analytics and real-user Core Web Vitals — see [Web Analytics](https://docs.hostess.sh/docs/analytics).
+
 There are two levels of detail, and you choose how far you go.
 
 ### Level 1 — Basic traffic, no code change
@@ -42,7 +44,7 @@ See [FastAPI → API Insights](https://docs.hostess.sh/docs/service-types/fastap
 <Tab value="Next.js">
 
 ```ts title="instrumentation.ts"
-export { register, onRequestError } from "@hostess/nextjs";
+export { register, onRequestError } from "@hostess/nextjs/server";
 ```
 
 See [Next.js → API Insights](https://docs.hostess.sh/docs/service-types/nextjs#api-insights) for installation and details.

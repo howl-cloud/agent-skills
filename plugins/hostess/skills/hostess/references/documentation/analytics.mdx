@@ -1,0 +1,96 @@
+---
+title: Web Analytics
+description: Privacy-friendly audience analytics and real-user Core Web Vitals for your web apps — two components, no cookies, no third-party scripts.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## What is Web Analytics?
+
+Hostess ships two browser-side insights products, both collected by the same lightweight SDK and viewed in [Studio](https://docs.hostess.sh/docs/studio):
+
+- **Audience Analytics** — visitors, page views, bounce rate, and breakdowns by page, referrer, UTM campaign, country, device, browser, and OS.
+- **Speed Insights** — real-user Core Web Vitals (LCP, INP, CLS, FCP, TTFB) with percentile controls, per-route detail, and a single **Real Experience Score**.
+
+Unlike server-side [Insights](https://docs.hostess.sh/docs/insights), which observe requests inside your service, Web Analytics measures what actually happens in your visitors' browsers. The two are complementary: Insights tells you your API answered in 40 ms; Speed Insights tells you the page still took 2 s to become interactive on a phone.
+
+Beacons are sent **same-origin** to `/_hostess/rum` on your app's own domain — Hostess routes that reserved path to its ingest service. There is no third-party analytics domain to allowlist, and ad blockers that block cross-site trackers don't affect it.
+
+## Setup
+
+Install the helper (the same package that powers server-side Insights):
+
+```bash
+npm install @hostess/nextjs
+```
+
+Add the components to your root layout:
+
+```tsx title="app/layout.tsx"
+import { Analytics, SpeedInsights } from "@hostess/nextjs";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Analytics />
+        <SpeedInsights />
+      </body>
+    </html>
+  );
+}
+```
+
+Use one or both — `<Analytics />` powers the **Analytics** tab, `<SpeedInsights />` powers the **Speed Insights** tab. Both work with the App Router and the Pages Router (in the Pages Router, add them to `pages/_app.tsx`).
+
+<Callout type="info">
+The components send nothing when `NODE_ENV` is `development` — your local dev sessions never pollute production analytics. They also send nothing when the app isn't running on Hostess, so the same code is safe in forks, previews, and CI.
+</Callout>
+
+## Audience Analytics
+
+The **Analytics** tab on a web service shows:
+
+- **Visitors** — unique visitors per day, summed across the selected range.
+- **Page Views** and **Bounce Rate**, each with change vs. the previous period.
+- **Traffic** — views and visitors over time.
+- **Pages** — top routes (`/things/[id]`), concrete paths, and hostnames.
+- **Sources** — referrers and UTM source / medium / campaign breakdowns.
+- **Geography** — country-level only.
+- **Clients** — device class (desktop / mobile / tablet), browser, and OS.
+
+Routes are reported as **route templates**, so `/things/42` and `/things/7` aggregate under `/things/[id]` — dynamic routes don't fragment your data.
+
+### Privacy
+
+Audience Analytics is designed to need no cookie banner:
+
+- **No cookies, no localStorage, no fingerprinting.** Nothing is stored in the browser.
+- **Visitors are counted with a daily-rotating hash.** The visitor identity is a hash of IP, user agent, and site, salted with a value that rotates every day — so a "visitor" is a *daily* unique, and visitors cannot be tracked across days even by Hostess. Raw IPs and user agents are discarded after the hash and coarse lookups are computed.
+- **Coarse dimensions only.** Country-level geolocation (no city, no coordinates), three device classes, browser and OS family.
+
+## Speed Insights
+
+The **Speed Insights** tab shows real-user Core Web Vitals collected from actual page loads:
+
+- **LCP, INP, CLS, FCP, and TTFB**, filterable by device class and percentile (P75 — the industry standard — plus P90, P95, P99), with time-series charts and web.dev rating thresholds.
+- **Per-route table** — every route with its vitals and sample counts, worst first.
+- **Real Experience Score (RES)** — a single 0–100 score computed from your visitors' vitals using Lighthouse-style log-normal scoring curves. Unlike a lab score, it reflects what real users experienced on real networks and devices.
+
+<Callout type="info">
+Every vital needs at least **10 samples** in the selected window before it contributes — low-traffic routes show "insufficient data" rather than a misleading number computed from two page loads. If a fresh deployment shows insufficient data, wait a few minutes for samples to accumulate.
+</Callout>
+
+## How it works
+
+The SDK queues events in the browser and flushes them when the page is hidden (tab switch, navigation, close) using `sendBeacon`, so it never blocks navigation or adds requests during page load. Each beacon carries the route template, coarse device class, and — for Speed Insights — the finalized vital values for that page view.
+
+On the platform side, beacons land on Hostess's ingest service, which attributes them to your service by hostname, rolls pageviews into per-day aggregates, and records vitals as histograms. Nothing about this pipeline runs inside your app's containers or affects its resources.
+
+## Limits and notes
+
+- Web Analytics is available for **Next.js services** today via `@hostess/nextjs`. The underlying `@hostess/browser` package is framework-agnostic; more framework helpers are planned.
+- Beacons only flow for apps served through Hostess URLs (including [custom domains](https://docs.hostess.sh/docs/custom-domains)).
+- Data appears within seconds for Analytics; Speed Insights charts need a few minutes of samples after first enablement.

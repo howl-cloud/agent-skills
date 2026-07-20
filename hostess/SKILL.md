@@ -138,6 +138,7 @@ Load only the page(s) needed for the current task. Paths are relative to this sk
 
 - [Hostess Studio](references/documentation/studio.mdx): The web dashboard for managing your Hostess deployments, services, and configuration.
 - [Insights](references/documentation/insights.mdx): Traffic, latency, error rates, and distributed traces for your services — on by default, with route-level detail one line of code away.
+- [Web Analytics](references/documentation/analytics.mdx): Privacy-friendly audience analytics and real-user Core Web Vitals for your web apps — two components, no cookies, no third-party scripts.
 - [AI Agents](references/documentation/ai-agents.mdx): Use Hostess directly from Claude Code, Codex, Cursor, and other agents
 #### Concepts
 

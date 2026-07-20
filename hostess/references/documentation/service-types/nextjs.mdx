@@ -342,13 +342,13 @@ npm install @hostess/nextjs
 Next.js loads server-side instrumentation from a single `instrumentation.ts` (or `.js`) file at the root of your project (or under `src/`). Re-export Hostess's `register` and `onRequestError` from it:
 
 ```ts title="instrumentation.ts"
-export { register, onRequestError } from "@hostess/nextjs";
+export { register, onRequestError } from "@hostess/nextjs/server";
 ```
 
 If you already have an `instrumentation.ts`, call into the Hostess hooks from your own:
 
 ```ts title="instrumentation.ts"
-import { register as hostessRegister, onRequestError as hostessOnRequestError } from "@hostess/nextjs";
+import { register as hostessRegister, onRequestError as hostessOnRequestError } from "@hostess/nextjs/server";
 
 export async function register() {
   await hostessRegister();
@@ -384,6 +384,34 @@ services:
 ```
 
 See the [Insights guide](https://docs.hostess.sh/docs/insights) for the full picture and the [Configuration Reference](https://docs.hostess.sh/docs/configuration#insights) for the field details.
+
+<Callout type="warn">
+Upgrading from `@hostess/nextjs` 0.1.x? The server hooks moved to the `/server` subpath in 0.2.0 — change `from "@hostess/nextjs"` to `from "@hostess/nextjs/server"` in `instrumentation.ts`. The package root now exports only client components.
+</Callout>
+
+---
+
+## Web Analytics & Speed Insights
+
+The same package also provides browser-side insights: privacy-friendly audience analytics (visitors, page views, referrers, countries, devices) and real-user Core Web Vitals with a Real Experience Score. Add the components to your root layout:
+
+```tsx title="app/layout.tsx"
+import { Analytics, SpeedInsights } from "@hostess/nextjs";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Analytics />
+        <SpeedInsights />
+      </body>
+    </html>
+  );
+}
+```
+
+Data appears on the service's **Analytics** and **Speed Insights** tabs in Studio. No cookies, no third-party scripts, nothing sent in development. See [Web Analytics](https://docs.hostess.sh/docs/analytics) for what's collected and how visitors are counted.
 
 ---
 

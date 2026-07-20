@@ -243,6 +243,14 @@ Insights are on by default for web-facing services. The route-level table, frame
 
 ![Trace Waterfall](https://docs.hostess.sh/images/studio/trace-waterfall.png)
 
+### Analytics
+
+The **Analytics** tab shows privacy-friendly audience analytics for web services instrumented with the Hostess SDK: visitors, page views, and bounce rate with change vs. the previous period, traffic over time, and breakdowns by page, referrer and UTM parameters, country, and client (device / browser / OS). Range controls cover 24 hours to 90 days. See [Web Analytics](https://docs.hostess.sh/docs/analytics) for setup and what's collected.
+
+### Speed Insights
+
+The **Speed Insights** tab shows real-user Core Web Vitals (LCP, INP, CLS, FCP, TTFB) for instrumented web services, filterable by device class and percentile (P75–P99), with per-route detail and the **Real Experience Score** — a 0–100 score computed from what your visitors actually experienced. Metrics appear once enough samples accumulate; see [Web Analytics → Speed Insights](https://docs.hostess.sh/docs/analytics#speed-insights).
+
 ### Configuration
 
 The **Configuration** tab shows the service's current configuration as applied during the last deployment:
