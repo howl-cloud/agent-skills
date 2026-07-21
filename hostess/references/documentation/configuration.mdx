@@ -503,8 +503,8 @@ services:
 Each public or team port gets its own external URL:
 
 ```
-Port 1 (9000): https://my-app-minio-p4k8n7v2.hostess.run
-Port 2 (9001): https://my-app-minio-p4k8n7v2-2.hostess.run
+Port 1 (9000): https://my-app-minio-quiet-harbor.hostess.run
+Port 2 (9001): https://my-app-minio-quiet-harbor-2.hostess.run
 ```
 
 You can reference individual ports using magic variables: `${minio.port_1.url}`, `${minio.port_2.url}`, `${minio.port_2.external_url}`, etc.
@@ -1452,8 +1452,8 @@ services:
 Port 1 (9000) is the S3-compatible API. Port 2 (9001) is the web console. Each gets its own URL:
 
 ```
-Port 1: https://my-app-minio-p4k8n7v2.hostess.run
-Port 2: https://my-app-minio-p4k8n7v2-2.hostess.run
+Port 1: https://my-app-minio-quiet-harbor.hostess.run
+Port 2: https://my-app-minio-quiet-harbor-2.hostess.run
 ```
 
 ---

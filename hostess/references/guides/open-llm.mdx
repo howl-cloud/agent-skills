@@ -103,7 +103,7 @@ If this is your first deployment from this directory, Hostess prompts you to cre
 ```text
 ✓ Deployment complete
 
-  webui: https://open-webui-llama-webui-abc123.hostess.run
+  webui: https://open-webui-llama-webui-golden-pine.hostess.run
 ```
 </Step>
 
@@ -113,7 +113,7 @@ If this is your first deployment from this directory, Hostess prompts you to cre
 Open the `webui` URL from the deployment output:
 
 ```text
-https://open-webui-llama-webui-abc123.hostess.run
+https://open-webui-llama-webui-golden-pine.hostess.run
 ```
 
 The maintained example disables WebUI auth and signup for a simple demo deployment. The WebUI is preconfigured to call the private llama.cpp server through its OpenAI-compatible `/v1` API.
@@ -125,7 +125,7 @@ The maintained example disables WebUI auth and signup for a simple demo deployme
 Check the public WebUI health endpoint:
 
 ```bash title="Terminal"
-curl https://open-webui-llama-webui-abc123.hostess.run/health
+curl https://open-webui-llama-webui-golden-pine.hostess.run/health
 ```
 
 Then open the WebUI and send a short prompt. The browser talks to `webui`, and `webui` sends model requests to the private `llama` service through `${llama.url}/v1`.

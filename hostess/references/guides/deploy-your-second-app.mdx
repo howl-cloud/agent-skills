@@ -124,8 +124,8 @@ Environment: preview
 
 ✓ Deployment complete (dep_def456)
 
-  api:     https://simple-fastapi-app-api-k7xm9p2q.hostess.run
-  traffic: https://simple-fastapi-app-traffic-m3n8x5w2.hostess.run
+  api:     https://simple-fastapi-app-api-able-arc.hostess.run
+  traffic: https://simple-fastapi-app-traffic-swift-meadow.hostess.run
 ```
 
 Both services build in parallel. The CLI streams live phase labels as each image is built and pushed.
@@ -137,7 +137,7 @@ Both services build in parallel. The CLI streams live phase labels as each image
 FastAPI generates interactive documentation at `/docs`. Open the `api` URL from the deploy output with `/docs` appended:
 
 ```
-https://simple-fastapi-app-api-k7xm9p2q.hostess.run/docs
+https://simple-fastapi-app-api-able-arc.hostess.run/docs
 ```
 
 You'll see all available endpoints — products, categories, and orders — and can try them directly from the browser.
@@ -149,7 +149,7 @@ You'll see all available endpoints — products, categories, and orders — and 
 The `traffic` service exposes a `GET /run` endpoint that fires a burst of requests at the `api`. Visit the URL from the deploy output:
 
 ```bash title="Terminal"
-curl https://simple-fastapi-app-traffic-m3n8x5w2.hostess.run/run
+curl https://simple-fastapi-app-traffic-swift-meadow.hostess.run/run
 ```
 
 ```json
@@ -159,7 +159,7 @@ curl https://simple-fastapi-app-traffic-m3n8x5w2.hostess.run/run
 The `count` query parameter controls how many requests to send:
 
 ```bash title="Terminal"
-curl "https://simple-fastapi-app-traffic-m3n8x5w2.hostess.run/run?count=100"
+curl "https://simple-fastapi-app-traffic-swift-meadow.hostess.run/run?count=100"
 ```
 
 Run it a few times to build up enough data to see in Studio.

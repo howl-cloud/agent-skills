@@ -97,7 +97,7 @@ If this is your first deployment from this directory, Hostess prompts you to cre
 ```text
 ✓ Deployment complete
 
-  n8n: https://n8n-hostess-n8n-abc123.hostess.run
+  n8n: https://n8n-hostess-n8n-clear-stream.hostess.run
 ```
 </Step>
 
@@ -107,7 +107,7 @@ If this is your first deployment from this directory, Hostess prompts you to cre
 Open the `n8n` URL from the deployment output:
 
 ```text
-https://n8n-hostess-n8n-abc123.hostess.run
+https://n8n-hostess-n8n-clear-stream.hostess.run
 ```
 
 On a fresh deployment, n8n prompts you to create the owner account. After setup, you can create workflows, configure credentials, and receive webhooks at the same public host.
@@ -119,7 +119,7 @@ On a fresh deployment, n8n prompts you to create the owner account. After setup,
 Check n8n's public health endpoint:
 
 ```bash title="Terminal"
-curl https://n8n-hostess-n8n-abc123.hostess.run/healthz/readiness
+curl https://n8n-hostess-n8n-clear-stream.hostess.run/healthz/readiness
 ```
 
 Then create a small manual workflow in the n8n editor and run it once. The web service writes workflow state to Postgres, and queued executions are processed by `n8n-worker` through Redis.

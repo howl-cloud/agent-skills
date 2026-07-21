@@ -309,12 +309,12 @@ Managed Postgres databases on Hostess can be accessed securely from outside the 
 The public connection string is exposed through the `${database.external_url}` magic variable:
 
 ```
-postgresql://postgres:****@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
+postgresql://postgres:****@my-app-database-amber-basin.pg.hostess.run:5432/database?sslmode=require
 ```
 
 - Connections are **TLS-only**. `sslmode=require` encrypts the connection and works out of the box with `psql`, GUI clients (pgAdmin, DBeaver, TablePlus), and any ORM.
 ```bash title="Terminal"
-psql "postgresql://postgres:****@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require"
+psql "postgresql://postgres:****@my-app-database-amber-basin.pg.hostess.run:5432/database?sslmode=require"
 ```
 
 You don't have to build this string by hand — the Hostess CLI (`hostess ps`) and the Studio database dashboard both surface it.

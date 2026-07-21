@@ -192,8 +192,8 @@ Environment: preview
 
 ✓ Deployment complete (dep_abc123)
 
-  frontend: https://simple-full-stack-frontend-k7xm9p2q.hostess.run
-  api:      https://simple-full-stack-api-a3x9d2m1.hostess.run
+  frontend: https://simple-full-stack-frontend-able-arc.hostess.run
+  api:      https://simple-full-stack-api-calm-brook.hostess.run
 ```
 
 Hostess deploys in dependency order:
@@ -209,19 +209,19 @@ Hostess deploys in dependency order:
 Open the frontend URL from the deploy output:
 
 ```
-https://simple-full-stack-frontend-k7xm9p2q.hostess.run
+https://simple-full-stack-frontend-able-arc.hostess.run
 ```
 
 Check the API:
 
 ```bash title="Terminal"
-curl https://simple-full-stack-api-a3x9d2m1.hostess.run/api/status
+curl https://simple-full-stack-api-calm-brook.hostess.run/api/status
 ```
 
 Create another database-backed event:
 
 ```bash title="Terminal"
-curl -X POST https://simple-full-stack-api-a3x9d2m1.hostess.run/api/events \
+curl -X POST https://simple-full-stack-api-calm-brook.hostess.run/api/events \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello from Hostess"}'
 ```

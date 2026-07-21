@@ -7,7 +7,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 ## Overview
 
-Hostess gives generated HTTPS URLs for application services with pulic or team-scoped visibility. Private services stay reachable from other services through magic variables (and locally via `hostess connect`). You can also attach custom domains when you want branded URLs.
+Hostess gives generated HTTPS URLs for application services with public or team-scoped visibility. Private services stay reachable from other services through magic variables (and locally via `hostess connect`). You can also attach custom domains when you want branded URLs.
 
 There are several types of URLs in Hostess:
 
@@ -25,36 +25,36 @@ There are several types of URLs in Hostess:
 Application services and ports with public or team visibility receive stable URLs on the `hostess.run` domain using this format:
 
 ```
-https://{project}-{service}-{nanoID}.hostess.run
+https://{project}-{service}-{slug}.hostess.run
 ```
 
 Where:
 
 - **`{project}`** is your project name (from the `name` field in `hostess.yml` or the project name in Studio)
 - **`{service}`** is the service name (the key in your `services` map)
-- **`{nanoID}`** is an 8-character alphanumeric identifier, generated once per service in the environment
+- **`{slug}`** is a short friendly identifier generated once per service in the environment (two words joined with a hyphen, for example `able-arc`)
 
 ### Examples
 
 ```
-https://my-app-frontend-k7xm9p2q.hostess.run
-https://my-app-api-a3x9d2m1.hostess.run
-https://my-app-minio-p4k8n7v2.hostess.run
+https://my-app-frontend-able-arc.hostess.run
+https://my-app-api-calm-brook.hostess.run
+https://my-app-minio-quiet-harbor.hostess.run
 ```
 
 These URLs use HTTPS with certificates provisioned automatically. Team URLs use the same format and require [Hostess sign-in](https://docs.hostess.sh/docs/service-visibility#team-visibility) before the app loads.
 
 ---
 
-## NanoID
+## Service slug
 
-The NanoID is an 8-character alphanumeric string (e.g., `k7xm9p2q`) that identifies a service in an environment. Key characteristics:
+The slug is a human-readable, DNS-safe label (for example `able-arc`) that identifies a service in an environment. Key characteristics:
 
-- **Generated once** — The NanoID is created when a service is first deployed in an environment and persists across subsequent deployments.
-- **Stable** — The same service keeps the same NanoID in that environment, so stable URLs stay consistent between deploys.
-- **URL-safe** — Contains alphanumeric characters and is normalized into the generated hostname.
+- **Generated once** — Hostess creates the slug when a service is first deployed in an environment and keeps it for later deployments.
+- **Stable** — The same service keeps the same slug in that environment, so stable URLs stay consistent between deploys.
+- **URL-safe** — Lowercase words suitable for hostnames.
 
-Because the NanoID persists, you can share service URLs, bookmark them, or use them in webhook configurations.
+Because the slug persists, you can share service URLs, bookmark them, or use them in webhook configurations.
 
 ---
 
@@ -63,7 +63,7 @@ Because the NanoID persists, you can share service URLs, bookmark them, or use t
 Stable URLs are the primary generated URLs you share with users, configure in callbacks, and use for browser traffic. They route to the active version of a public or team service.
 
 ```
-https://my-app-api-a3x9d2m1.hostess.run
+https://my-app-api-calm-brook.hostess.run
 ```
 
 ### How Stable URLs Work
@@ -89,7 +89,7 @@ Stable URLs are displayed in several places:
 
 ## Deployment URLs
 
-Deployment URLs are generated for public and team application services (and matching ports). When git metadata is available, they use the short git commit SHA instead of the NanoID:
+Deployment URLs are generated for public and team application services (and matching ports). When git metadata is available, they use the short git commit SHA instead of the service slug:
 
 ```
 https://{project}-{service}-{shortSHA}.hostess.run
@@ -128,9 +128,9 @@ Deployment URLs remain available while the corresponding deployment is retained.
 When a service exposes multiple public or team ports, each of those ports gets its own URL. The first such port uses the standard URL format. Subsequent ports get a suffix:
 
 ```
-Port 1 (primary): https://{project}-{service}-{nanoID}.hostess.run
-Port 2:           https://{project}-{service}-{nanoID}-2.hostess.run
-Port 3:           https://{project}-{service}-{nanoID}-3.hostess.run
+Port 1 (primary): https://{project}-{service}-{slug}.hostess.run
+Port 2:           https://{project}-{service}-{slug}-2.hostess.run
+Port 3:           https://{project}-{service}-{slug}-3.hostess.run
 ```
 
 ### Example: MinIO
@@ -153,8 +153,8 @@ services:
 The resulting URLs:
 
 ```
-S3 API (port 1):   https://my-app-minio-p4k8n7v2.hostess.run
-Web Console (port 2): https://my-app-minio-p4k8n7v2-2.hostess.run
+S3 API (port 1):   https://my-app-minio-quiet-harbor.hostess.run
+Web Console (port 2): https://my-app-minio-quiet-harbor-2.hostess.run
 ```
 
 ### Port Numbering Convention
@@ -168,7 +168,7 @@ This numbering is also used in magic variables: `${minio.port_1.url}`, `${minio.
 
 ## Custom Domain URLs
 
-Custom domains point to the same service as generated URLs. When you configure a custom domain like `api.myapp.com`, it routes to the same service that `my-app-api-a3x9d2m1.hostess.run` routes to.
+Custom domains point to the same service as generated URLs. When you configure a custom domain like `api.myapp.com`, it routes to the same service that `my-app-api-calm-brook.hostess.run` routes to.
 
 Both URLs work simultaneously. The generated URL remains available after you add a custom domain.
 
@@ -185,7 +185,7 @@ services:
 After deploying a public or team service:
 
 ```
-Auto-generated: https://my-app-api-a3x9d2m1.hostess.run
+Auto-generated: https://my-app-api-calm-brook.hostess.run
 Custom domain:  https://api.myapp.com                     ← works after DNS setup
 ```
 
@@ -253,7 +253,7 @@ services:
     env:
       # Browser JavaScript calls the API via the external URL
       NEXT_PUBLIC_API_URL: ${api.external_url}
-      # → https://my-app-api-a3x9d2m1.hostess.run
+      # → https://my-app-api-calm-brook.hostess.run
 
   api:
     type: fastapi
@@ -287,8 +287,8 @@ $ hostess deploy
 
 ✓ Deployment complete
 
-frontend: https://my-app-frontend-k7xm9p2q.hostess.run
-api:      https://my-app-api-a3x9d2m1.hostess.run
+frontend: https://my-app-frontend-able-arc.hostess.run
+api:      https://my-app-api-calm-brook.hostess.run
 database: connection info available via `hostess inspect dep_abc123`
 ```
 
@@ -309,13 +309,13 @@ Completed:  2m ago
 Services:
   NAME             TYPE       STATUS     URL
   ──────────────────────────────────────────────────────────────────────
-  frontend         nextjs     Ready      https://my-app-frontend-k7xm9p2q.hostess.run
-  api              fastapi    Ready      https://my-app-api-a3x9d2m1.hostess.run
+  frontend         nextjs     Ready      https://my-app-frontend-able-arc.hostess.run
+  api              fastapi    Ready      https://my-app-api-calm-brook.hostess.run
   database         postgres   Ready      (private)
 
 External URLs:
-  frontend:        https://my-app-frontend-k7xm9p2q.hostess.run
-  api:             https://my-app-api-a3x9d2m1.hostess.run
+  frontend:        https://my-app-frontend-able-arc.hostess.run
+  api:             https://my-app-api-calm-brook.hostess.run
 
 Private Services:
   database:        postgres — use: hostess connect database
@@ -333,9 +333,9 @@ Here is a complete reference of all URL types and when to use each:
 
 | URL Type | Format | Use Case |
 |---|---|---|
-| Stable URL | `https://{project}-{service}-{nanoID}.hostess.run` | Public or team service traffic |
+| Stable URL | `https://{project}-{service}-{slug}.hostess.run` | Public or team service traffic |
 | Deployment URL | `https://{project}-{service}-{shortSHA}.hostess.run` | PR previews, rollback verification |
-| Multi-port URL | `https://{project}-{service}-{nanoID}-{N}.hostess.run` | Additional public or team ports |
+| Multi-port URL | `https://{project}-{service}-{slug}-{N}.hostess.run` | Additional public or team ports |
 | Internal URL | `${service.url}` | Service-to-service communication |
 | Custom domain | `https://yourdomain.com` | Branded production URLs |
 

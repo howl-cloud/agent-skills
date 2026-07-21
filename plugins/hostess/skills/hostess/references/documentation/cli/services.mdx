@@ -47,10 +47,10 @@ hostess services list
 ```
 SERVICE          TYPE       STATUS     PORTS     URL
 ────────────────────────────────────────────────────────────────────────────────
-frontend         nextjs     Running    3000      https://my-app-frontend-k7xm9p2q.hostess.run
-api              fastapi    Running    8000      https://my-app-api-a3x9d2m1.hostess.run
-database         postgres   Running    5432      postgresql://***@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
-cache            redis      Running    6379      rediss://my-app-cache-p2x8k4n7.default:***@redis.hostess.run:6379
+frontend         nextjs     Running    3000      https://my-app-frontend-able-arc.hostess.run
+api              fastapi    Running    8000      https://my-app-api-calm-brook.hostess.run
+database         postgres   Running    5432      postgresql://***@my-app-database-amber-basin.pg.hostess.run:5432/database?sslmode=require
+cache            redis      Running    6379      rediss://my-app-cache-crisp-coral.default:***@redis.hostess.run:6379
 ```
 
 ```bash title="Terminal"
@@ -71,7 +71,7 @@ SERVICE: frontend
 
   Ports:
     PORT     VISIBILITY   URL
-    3000     public       https://my-app-frontend-k7xm9p2q.hostess.run
+    3000     public       https://my-app-frontend-able-arc.hostess.run
 
 SERVICE: api
   Type:     fastapi
@@ -79,20 +79,20 @@ SERVICE: api
 
   Ports:
     PORT     VISIBILITY   URL
-    8000     public       https://my-app-api-a3x9d2m1.hostess.run
+    8000     public       https://my-app-api-calm-brook.hostess.run
 
 SERVICE: database
   Type:     postgres
   Status:   Running
 
-  Connection: postgresql://***@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
+  Connection: postgresql://***@my-app-database-amber-basin.pg.hostess.run:5432/database?sslmode=require
   Fallback:   hostess connect database
 
 SERVICE: cache
   Type:     redis
   Status:   Running
 
-  Connection: rediss://my-app-cache-p2x8k4n7.default:***@redis.hostess.run:6379
+  Connection: rediss://my-app-cache-crisp-coral.default:***@redis.hostess.run:6379
   Fallback:   hostess connect cache
 ```
 

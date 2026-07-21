@@ -112,7 +112,7 @@ If this is your first deployment from this directory, Hostess prompts you to cre
 ```text
 ✓ Deployment complete
 
-  metabase: https://metabase-metabase-abc123.hostess.run
+  metabase: https://metabase-metabase-fresh-moss.hostess.run
 ```
 </Step>
 
@@ -122,7 +122,7 @@ If this is your first deployment from this directory, Hostess prompts you to cre
 Open the `metabase` URL from the deployment output:
 
 ```text
-https://metabase-metabase-abc123.hostess.run
+https://metabase-metabase-fresh-moss.hostess.run
 ```
 
 Log in with the `METABASE_ADMIN_EMAIL` and `METABASE_ADMIN_PASSWORD` values you stored in Hostess. The `register-business-db` job registers the seeded `business` schema as a `Business Demo` data source.
@@ -134,7 +134,7 @@ Log in with the `METABASE_ADMIN_EMAIL` and `METABASE_ADMIN_PASSWORD` values you 
 Check the public Metabase health endpoint:
 
 ```bash title="Terminal"
-curl https://metabase-metabase-abc123.hostess.run/api/health
+curl https://metabase-metabase-fresh-moss.hostess.run/api/health
 ```
 
 Then open Metabase and browse the `Business Demo` database. The seed job creates demo customers, products, orders, support tickets, and marketing campaigns.

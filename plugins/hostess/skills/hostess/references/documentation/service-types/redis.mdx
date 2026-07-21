@@ -218,14 +218,14 @@ See the [CLI connect reference](https://docs.hostess.sh/docs/cli/connect) for al
 You can connect to your managed Redis instance securely from outside the Hostess platform using a TLS-enabled public `redis.hostess.run` endpoint. The public connection string for your Redis service is available as `${cache.external_url}`:
 
 ```
-rediss://my-app-cache-p2x8k4n7.default:****@redis.hostess.run:6379/0
+rediss://my-app-cache-crisp-coral.default:****@redis.hostess.run:6379/0
 ```
 
 - The `rediss://` scheme means the connection is **TLS-encrypted**.
 - This works with a plain copy-paste URL in every major Redis client.
 
 ```bash title="Terminal"
-redis-cli --tls -u 'rediss://my-app-cache-p2x8k4n7.default:****@redis.hostess.run:6379/0'
+redis-cli --tls -u 'rediss://my-app-cache-crisp-coral.default:****@redis.hostess.run:6379/0'
 ```
 
 ```ts title="ioredis"

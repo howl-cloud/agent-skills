@@ -69,7 +69,7 @@ When you define a `type: postgres` service, the following magic variables become
 
           # Full external connection URL — use for external access
           DATABASE_EXTERNAL_URL: ${database.external_url}
-          # → postgresql://postgres:pass@my-app-database-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require
+          # → postgresql://postgres:pass@my-app-database-amber-basin.pg.hostess.run:5432/database?sslmode=require
 
       database:
         type: postgres
@@ -88,7 +88,7 @@ When you define a `type: postgres` service, the following magic variables become
 
           # External (branded) hostname
           DB_EXTERNAL_HOST: ${database.external_host}
-          # → my-app-database-k7xm9p2q.pg.hostess.run
+          # → my-app-database-amber-basin.pg.hostess.run
 
           # Port number
           DB_PORT: ${database.port}
@@ -118,9 +118,9 @@ When you define a `type: postgres` service, the following magic variables become
 | Variable | Description | Example Value |
 |----------|-------------|---------------|
 | `${db.url}` | Internal connection URL with credentials | `(internal — managed by Hostess)` |
-| `${db.external_url}` | External connection URL with credentials | `postgresql://postgres:pass@my-app-db-k7xm9p2q.pg.hostess.run:5432/database?sslmode=require` |
+| `${db.external_url}` | External connection URL with credentials | `postgresql://postgres:pass@my-app-db-amber-basin.pg.hostess.run:5432/database?sslmode=require` |
 | `${db.host}` | Internal hostname | `(internal — managed by Hostess)` |
-| `${db.external_host}` | External hostname | `my-app-db-k7xm9p2q.pg.hostess.run` |
+| `${db.external_host}` | External hostname | `my-app-db-amber-basin.pg.hostess.run` |
 | `${db.port}` | Port number | `5432` |
 | `${db.user}` | Username | `postgres` |
 | `${db.database}` | Database name | `database` |
@@ -145,7 +145,7 @@ services:
 
       # Full external connection URL
       REDIS_EXTERNAL_URL: ${cache.external_url}
-      # → rediss://my-app-cache-p2x8k4n7.default:pass@redis.hostess.run:6379/0
+      # → rediss://my-app-cache-crisp-coral.default:pass@redis.hostess.run:6379/0
 
   cache:
     type: redis
@@ -157,9 +157,9 @@ services:
 | Variable | Description | Example Value |
 |----------|-------------|---------------|
 | `${cache.url}` | Internal connection URL | `(internal — managed by Hostess)` |
-| `${cache.external_url}` | External connection URL | `rediss://my-app-cache-p2x8k4n7.default:pass@redis.hostess.run:6379/0` |
+| `${cache.external_url}` | External connection URL | `rediss://my-app-cache-crisp-coral.default:pass@redis.hostess.run:6379/0` |
 | `${cache.host}` | Internal hostname | `(internal — managed by Hostess)` |
-| `${cache.external_host}` | External hostname | `my-app-cache-p2x8k4n7.rd.hostess.run` |
+| `${cache.external_host}` | External hostname | `my-app-cache-crisp-coral.rd.hostess.run` |
 | `${cache.port}` | Port number | `6379` |
 | `${cache.password}` | Auto-generated password | `(secure random string)` |
 
@@ -180,7 +180,7 @@ services:
     env:
       # Browser-side API calls need the external URL
       NEXT_PUBLIC_API_URL: ${api.external_url}
-      # → https://my-app-api-a3x9d2m1.hostess.run
+      # → https://my-app-api-calm-brook.hostess.run
 
     depends_on:
       - api
@@ -200,9 +200,9 @@ services:
 | Variable | Description | Example Value |
 |----------|-------------|---------------|
 | `${svc.url}` | Internal URL (for service-to-service) | `(internal — managed by Hostess)` |
-| `${svc.external_url}` | External URL (for browsers/webhooks) | `https://my-app-backend-a3x9d2m1.hostess.run` |
+| `${svc.external_url}` | External URL (for browsers/webhooks) | `https://my-app-backend-calm-brook.hostess.run` |
 | `${svc.host}` | Internal hostname | `(internal — managed by Hostess)` |
-| `${svc.external_host}` | External hostname | `my-app-backend-a3x9d2m1.hostess.run` |
+| `${svc.external_host}` | External hostname | `my-app-backend-calm-brook.hostess.run` |
 | `${svc.port}` | Port number | `8000` |
 
 ## Multi-Port Services
@@ -229,10 +229,10 @@ services:
       # → (internal URL, managed by Hostess)
 
       S3_EXTERNAL: ${minio.port_1.external_url}
-      # → https://my-app-minio-k7xm9p2q.hostess.run
+      # → https://my-app-minio-able-arc.hostess.run
 
       MINIO_CONSOLE: ${minio.port_2.external_url}
-      # → https://my-app-minio-k7xm9p2q-2.hostess.run
+      # → https://my-app-minio-able-arc-2.hostess.run
 ```
 
 **Multi-port variable reference:**
