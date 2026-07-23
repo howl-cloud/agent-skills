@@ -71,7 +71,7 @@ hostess deploy --env staging
 hostess deploy --env preview
 ```
 
-If `--env` is omitted, the CLI uses the most recently created environment in the project. On a standard new project, that is often `preview`, because it is created after `production`.
+If `--env` is omitted, the CLI deploys to the `production` environment by default.
 
 <Callout type="info">
 In CI/CD pipelines, always use `--env` so deployments do not depend on project creation order or runner state.

@@ -34,7 +34,7 @@ hostess deploy [flags]
 | `--file` | `-f` | `string` | `hostess.yml` | Path to hostess.yml config file |
 | `--repo` | `-r` | `string` | | GitHub repo to deploy from (e.g., `org/repo`) |
 | `--url` | | `string` | | URL to a remote hostess.yml file |
-| `--env` | | `string` | Most recently created environment if omitted (often `preview` on a new project) | Deploy to a specific environment (e.g., `staging`, `production`). Always set `--env` in CI. |
+| `--env` | | `string` | `production` | Deploy to a specific environment (e.g., `staging`, `production`). |
 | `--project` | `-p` | `string` | From `hostess.yml` | Project name (overrides the `name` field in hostess.yml) |
 | `--service` | `-s` | `string[]` | All services | Deploy only selected service(s). Repeatable. |
 | `--no-interactive` | | `bool` | `false` | Run without prompts; useful for CI and scripts |
@@ -159,7 +159,7 @@ When you run `hostess deploy`, the following happens:
 1. **Configuration loading** — The CLI reads and validates your `hostess.yml`
 2. **Authentication** — Resolves your token from `--token` flag, `HOSTESS_TOKEN` env var, or saved login
 3. **Project resolution** — Finds your project by name, or prompts to create one
-4. **Environment selection** — Uses `--env` or, if omitted, the most recently created environment (often `preview` on a new project)
+4. **Environment selection** — Uses `--env` or defaults to `production`
 5. **Source upload** — Archives and uploads your source code (for services with `build:` configs)
 6. **Build** — Hostess builds container images for each service
 7. **Deploy** — Services are deployed in dependency order
@@ -170,7 +170,7 @@ When you run `hostess deploy`, the following happens:
 
 In an interactive terminal (TTY), the deploy command shows a rich TUI with real-time status updates for each service. In non-interactive mode (CI/CD, piped output), it shows a simpler text output with deployment ID and final status.
 
-If the project is new in interactive mode, Hostess prompts you to create it and select an organization. In non-interactive mode (`--no-interactive`), create the project first with `hostess projects create <name>`.
+If the project is new in interactive mode, Hostess prompts you to create it and select an organization. In non-interactive mode (`--no-interactive`), create the project first with `hostess projects create <name>`. If the target environment does not exist, an interactive deploy offers to create it; with `--no-interactive`, the CLI prints an exact `hostess environments ensure <name> ...` command to run first.
 
 ## Build Logs
 

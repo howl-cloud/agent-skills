@@ -95,6 +95,40 @@ hostess environments create qa --branches release/* --branches hotfix/* --protec
 
 ---
 
+## environments ensure
+
+Idempotently create an environment if it does not exist.
+
+### Usage
+
+```bash title="Terminal"
+hostess environments ensure <name> [flags]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--branches` | `string[]` | none | Branch patterns this environment tracks (comma-separated or repeatable) |
+| `--ephemeral` | `bool` | `false` | Mark this environment as ephemeral (e.g. per-PR previews) |
+| `--ttl` | `string` | none | Time-to-live for ephemeral resources (e.g. `24h`) |
+| `--auto-delete` | `bool` | `false` | Automatically delete this environment when its TTL expires |
+| `--protected` | `bool` | `false` | Protect this environment's branches |
+| `--project` | `string` | From `hostess.yml` | Project name |
+| `--token` | `string` | | Auth token |
+
+### Examples
+
+```bash title="Terminal"
+hostess environments ensure staging
+```
+
+```bash title="Terminal"
+hostess environments ensure preview --branches='*' --ephemeral --ttl=24h --auto-delete
+```
+
+---
+
 ## environments update
 
 Update an existing environment. Only the flags you pass are changed — anything unset is left as-is.

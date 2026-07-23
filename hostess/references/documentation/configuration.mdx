@@ -87,7 +87,7 @@ Each service is keyed by a **name** (the YAML key under `services:`). Names must
 | `domains` | array | No | Custom domains (production shorthand). |
 | `visibility` | string | No | Who can reach the service: `public`, `team`, or `private`. See [Visibility](#visibility). |
 | `ports` | array | No | Ports to expose. Defaults depend on service type. Optional per-port `visibility`. |
-| `resources` | string or object | No | Resource allocation. Defaults to `medium`. |
+| `resources` | string or object | No | Resource allocation. Defaults to automatic workload-aware sizing (see [Resources](#resources)). |
 | `replicas` | number or object | No | Replica count or autoscaling config. Defaults to `1`. |
 | `health` | object | No | Health check configuration. Defaults depend on service type. |
 | `retention` | string | No | Data retention policy: `permanent` or `ephemeral`. For `postgres`, `redis`, and stateful `custom` services. |
@@ -536,7 +536,16 @@ services:
 | `large` | 2.0 cores | 2Gi | 50Gi | High-traffic services |
 | `xlarge` | 4.0 cores | 4Gi | 100Gi | Large databases, ML workloads |
 
-If you do not specify `resources`, it defaults to `medium`.
+If you omit `resources`, Hostess selects automatic workload-aware sizing based on service type. This is not a named preset — use `small`, `medium`, `large`, or `xlarge` when you want a fixed preset.
+
+| Workload | CPU request | Memory request | CPU limit | Memory limit |
+|---|---|---|---|---|
+| Next.js / FastAPI | 0.1 cores | 256Mi | 1.0 cores | 1Gi |
+| Custom | 0.25 cores | 512Mi | 1.0 cores | 1Gi |
+| Jobs | 0.1 cores | 256Mi | 1.0 cores | 1Gi |
+| Postgres / Redis | 1.0 cores | 1Gi | 1.0 cores | 1Gi |
+
+For Postgres, Redis, and custom services with persistent storage, disk defaults to **20Gi** when storage is omitted.
 
 </Tab>
 <Tab value="Preset + Custom Storage">
@@ -1104,7 +1113,7 @@ jobs:
 | `env` | No | Literals, magic variables, and secret references. |
 | `files` | No | Read-only file mounts. |
 | `depends_on` | No | Services or jobs that must be healthy/completed first. |
-| `resources` | No | Same shape as service resources. Defaults to `medium`. |
+| `resources` | No | Same shape as service resources. Defaults to automatic workload-aware sizing (see [Resources](#resources)). |
 | `run` | No | `on_deploy`, `once`, `manual`, or `cron`. Defaults to `on_deploy`. |
 | `schedule` | Required for `cron` | `daily`, `weekly`, `monthly`, or a 5-field cron expression. |
 | `timeout` | No | Defaults to `5m`. |
@@ -1482,7 +1491,7 @@ A quick reference of defaults when fields are omitted:
 
 | Field | Default Value |
 |---|---|
-| `resources` | `medium` |
+| `resources` | Automatic workload-aware sizing (see [Resources](#resources)) |
 | `replicas` | `1` |
 | Built-in health (no `health` block) | Type defaults with **30s** interval, **5s** timeout, **3** retries |
 | `health` block without `interval` | **10s** interval (when you define a custom `health` section) |
