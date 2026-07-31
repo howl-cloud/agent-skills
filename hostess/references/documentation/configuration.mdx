@@ -628,9 +628,9 @@ services:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `min` | number | - | Minimum number of replicas. Always running. |
+| `min` | number | - | Minimum number of replicas, always running. Set `0` to let the service idle at zero instances and wake on the next request. |
 | `max` | number | - | Maximum number of replicas. Upper scaling bound. |
-| `target_cpu` | number | `70` | Target CPU utilization percentage. When average CPU usage exceeds this, Hostess scales up. |
+| `target_cpu` | number | `70` | Target CPU utilization percentage. When average CPU usage exceeds this, Hostess scales up. Applies when `min` is 1 or more. |
 
 Hostess manages stabilization windows and cooldown periods internally to prevent thrashing.
 
@@ -638,13 +638,14 @@ Hostess manages stabilization windows and cooldown periods internally to prevent
 </Tabs>
 
 <Callout type="info">
-If you do not specify `replicas`, it defaults to `1`. Autoscaling in v1.0 is based on CPU utilization only.
+If you do not specify `replicas`, it defaults to `1`. With `min` at 1 or more, scaling follows CPU utilization; with `min: 0` it follows incoming request load — see [Configure Autoscaling](/guides/autoscaling).
 </Callout>
 
 #### Validation
 
-- Fixed replica count and autoscaling `min` must be at least **1**.
-- Autoscaling `max` must be greater than or equal to `min`.
+- Fixed replica count must be at least **1**.
+- Autoscaling `min` can be **0** for `nextjs`, `fastapi`, and `custom` services that have exactly one `public` or `team` port and no persistent storage; every other service uses **1** or more. `private` ports are unrestricted — only `public` and `team` ports count toward that one.
+- Autoscaling `max` must be at least **1** and greater than or equal to `min`.
 
 ---
 

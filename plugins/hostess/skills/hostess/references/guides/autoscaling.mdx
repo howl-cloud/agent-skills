@@ -1,25 +1,24 @@
 ---
 title: Configure Autoscaling
-description: Set up horizontal autoscaling with CPU-based targets for your services
+description: Scale a service between a minimum and maximum number of instances, including all the way down to zero while it is idle
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout'
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
 
-Autoscaling automatically adjusts the number of running instances (replicas) of your service based on CPU utilization. When traffic spikes, Hostess adds more replicas to handle the load. When traffic drops, it scales back down to save resources.
+Autoscaling automatically adjusts the number of running instances (replicas) of your service. When traffic spikes, Hostess adds more replicas to handle the load. When traffic drops, it scales back down — to a floor you choose, or all the way to zero for services you opt in.
 
-This guide covers how to configure autoscaling in `hostess.yml`, choose the right settings for your service type, and understand scaling behavior.
+This guide covers how to configure autoscaling in `hostess.yml`, how to let an idle service drop to zero instances and wake on the next request, and how to choose the right settings for your service type.
 
 ---
 
-## Fixed Replicas vs Autoscaling
-
-Hostess supports two scaling modes:
+## Scaling Modes
 
 | Mode | Config | Best For |
 |------|--------|----------|
 | **Fixed replicas** | `replicas: 3` | Predictable services, background workers, services with consistent load |
 | **Autoscaling** | `replicas: { min: 2, max: 10, target_cpu: 70 }` | Variable traffic, APIs, web frontends, anything with unpredictable load |
+| **Scale to zero** | `replicas: { min: 0, max: 3 }` | Side projects, demos, docs and preview apps that sit idle between visits |
 
 **Default behavior**: If you don't specify `replicas` at all, Hostess runs **1 replica** with no autoscaling.
 
@@ -67,9 +66,9 @@ services:
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `min` | Minimum number of replicas. Hostess never scales below this, even at zero traffic. | `2` |
-| `max` | Maximum number of replicas. Hostess never scales above this, even under extreme load. | `10` |
-| `target_cpu` | Target average CPU utilization percentage across all replicas. | `70` |
+| `min` | Minimum number of replicas. Hostess never scales below this, even at zero traffic. Set `0` to let the service go idle at zero instances. | `2` |
+| `max` | Maximum number of replicas. Hostess never scales above this, even under extreme load. Always 1 or more. | `10` |
+| `target_cpu` | Target average CPU utilization percentage across all replicas. Applies when `min` is 1 or more. | `70` |
 
 ### How `target_cpu` works
 
@@ -81,8 +80,82 @@ The `target_cpu` value is the **average CPU utilization percentage** that Hostes
 
 **Example**: You have `target_cpu: 70` with 2 replicas, each using 90% CPU. The average is 90%, which exceeds 70%, so Hostess scales up to 3 (or more) replicas to bring the average down.
 
+`target_cpu` is the scaling signal whenever `min` is 1 or more. Services that set `min: 0` scale on **incoming request load** instead — see [Scale to Zero While Idle](#scale-to-zero-while-idle).
+
 <Callout type="info">
 Hostess manages stabilization windows and cooldown periods internally to prevent rapid scale-up/scale-down cycles (thrashing). You do not need to configure these manually.
+</Callout>
+
+---
+
+## Scale to Zero While Idle
+
+Set `min: 0` and your service releases every instance after about five minutes without requests. Its URLs stay live, and the next request wakes it automatically:
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  database:
+    type: postgres
+    resources:
+      preset: small
+      storage: 10Gi
+
+  web:
+    type: nextjs
+    build:
+      source: ./web
+    depends_on: [database]
+    env:
+      DATABASE_URL: ${database.url}
+    replicas:
+      min: 0
+      max: 3
+```
+
+### What you see
+
+| When | What happens |
+|------|--------------|
+| No requests for about 5 minutes | The service drops to **0 instances**. Its URLs keep working. |
+| First request after idle | Hostess starts an instance and holds that request until the service is ready (up to 60 seconds), then returns the response. |
+| Steady traffic | Normal response times. The service scales between 1 and `max` on incoming request load. |
+| Traffic stops again | Back to 0 instances after about five minutes. |
+
+Only the first request after an idle stretch waits. Every request after it is served at full speed until the service goes idle again.
+
+### Which services can scale to zero
+
+`nextjs`, `fastapi`, and `custom` services with one `public` or `team` port and no persistent storage:
+
+- **`nextjs`** is public by default, so `min: 0` works as soon as you set it.
+- **`fastapi`** and **`custom`** are private by default — set `visibility: public` or `team` so the service has a URL to wake on.
+- Only `public` and `team` ports count toward the one-port rule. Add as many `private` ports as you like: an app port plus a private `9090` metrics port scales to zero.
+
+Managed `postgres` and `redis` services, and `custom` services with `persistence` or `retention: permanent`, run continuously on a fixed instance count — so a service that just woke up finds its database and its data ready.
+
+### Call it from another service
+
+Reach a scale-to-zero service with `${name.url}` and the call wakes it, exactly like a visitor's request:
+
+```yaml title="hostess.yml"
+  web:
+    env:
+      API_BASE: ${api.url}   # wakes api if it is idle
+```
+
+Use `${name.url}` rather than assembling the address from `${name.host}` and `${name.port}` — those name the service's own listening address and are for always-on services like `postgres` and `redis`.
+
+### Custom domains, previews, and deploys
+
+- **Custom domains** wake an idle service exactly the way its Hostess URL does.
+- **Preview environments** use the same `min: 0` from your `hostess.yml`, so preview apps idle between reviews.
+- **`visibility: team` services** still sign the visitor in first; the request wakes the service after that.
+- **Deploys stay strict.** Hostess marks a deployment successful only after the new version starts and reports healthy, so a broken build fails the deploy instead of idling at zero. Idle scale-down begins after that.
+
+<Callout type="info">
+Want the URL to always answer instantly? Use `min: 1` to keep one instance warm and let `target_cpu` handle the rest.
 </Callout>
 
 ---
@@ -246,23 +319,18 @@ After deploying with autoscaling, monitor your service's behavior in Hostess Stu
 | Frequent scale-up/scale-down | Increase `min` or lower `target_cpu` to stabilize |
 | Never scales above `min` | Your `min` may be too high, or `target_cpu` too low |
 | Latency spikes before scaling | Lower `target_cpu` (e.g., from 70 to 60) to scale up earlier |
+| The first visit after a quiet period feels slow | Expected with `min: 0`; set `min: 1` to keep one instance warm |
 
 ---
 
 ## Important Notes
 
-<Callout type="warn">
-**Autoscaling applies to Hostess application services.** To increase capacity for managed database services (`postgres`, `redis`), use fixed replicas where the service type supports them or upgrade the resource preset.
-</Callout>
-
-<Callout type="warn">
-**Custom services with `persistence` configured scale with fixed `replicas`.** Autoscaling applies to stateless services; set an explicit replica count for persistent workers.
-</Callout>
-
 <Callout type="info">
-Autoscaling decisions are based on **CPU utilization** — set `target_cpu` to control when replicas are added or removed.
+**Managed databases and persistent services run on a fixed instance count.** Give `postgres`, `redis`, and `custom` services with `persistence` an explicit `replicas: N`, and size them with the resource preset that fits their workload.
 </Callout>
 
-- The `target_cpu` default is **70%** if you specify `min` and `max` without an explicit target
-- Setting `min` equal to `max` effectively disables autoscaling (same as fixed replicas)
-- Autoscaling applies per-environment — you can have autoscaling in production and fixed replicas in staging
+- `target_cpu` drives scaling when `min` is 1 or more, and defaults to **70%** if you set `min` and `max` without it
+- `min: 0` scales on incoming request load instead — see [Scale to Zero While Idle](#scale-to-zero-while-idle)
+- `max` is always 1 or more
+- Setting `min` equal to `max` holds a steady instance count (same as fixed replicas)
+- Replica settings apply per-environment — you can scale to zero in preview and keep `min: 2` in production

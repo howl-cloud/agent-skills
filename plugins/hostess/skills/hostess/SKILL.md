@@ -177,7 +177,7 @@ Load only the page(s) needed for the current task. Paths are relative to this sk
 
 - [Set Up Custom Domains](references/guides/custom-domains.mdx): Configure DNS, add custom domains, and verify HTTPS certificates for your services
 - [Manage Secrets Across Environments](references/guides/managing-secrets.mdx): Create, scope, sync, and compare secrets across your deployment environments
-- [Configure Autoscaling](references/guides/autoscaling.mdx): Set up horizontal autoscaling with CPU-based targets for your services
+- [Configure Autoscaling](references/guides/autoscaling.mdx): Scale a service between a minimum and maximum number of instances, including all the way down to zero while it is idle
 - [Run Database Migrations](references/guides/database-migrations.mdx): Use lifecycle hooks to run Alembic, Prisma, Django, or Drizzle migrations on every deploy
 - [Set Up CI/CD with GitHub Actions](references/guides/ci-cd-github-actions.mdx): Automate Hostess deployments with GitHub Actions using personal access tokens
 - [Connect to Services Locally](references/guides/connect-to-services.mdx): Use hostess connect for local database access, shell sessions, and port forwarding
