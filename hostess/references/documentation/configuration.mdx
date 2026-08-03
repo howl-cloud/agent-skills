@@ -644,7 +644,7 @@ If you do not specify `replicas`, it defaults to `1`. With `min` at 1 or more, s
 #### Validation
 
 - Fixed replica count must be at least **1**.
-- Autoscaling `min` can be **0** for `nextjs`, `fastapi`, and `custom` services that have exactly one `public` or `team` port and no persistent storage; every other service uses **1** or more. `private` ports are unrestricted — only `public` and `team` ports count toward that one.
+- Autoscaling `min` can be **0** for eligible `nextjs`, `fastapi`, and `custom` services — see [Configure Autoscaling](/guides/autoscaling).
 - Autoscaling `max` must be at least **1** and greater than or equal to `min`.
 
 ---

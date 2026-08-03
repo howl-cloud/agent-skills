@@ -127,13 +127,42 @@ Only the first request after an idle stretch waits. Every request after it is se
 
 ### Which services can scale to zero
 
-`nextjs`, `fastapi`, and `custom` services with one `public` or `team` port and no persistent storage:
+`nextjs`, `fastapi`, and `custom` services without persistent storage can set `min: 0` in either of these shapes:
 
-- **`nextjs`** is public by default, so `min: 0` works as soon as you set it.
-- **`fastapi`** and **`custom`** are private by default — set `visibility: public` or `team` so the service has a URL to wake on.
-- Only `public` and `team` ports count toward the one-port rule. Add as many `private` ports as you like: an app port plus a private `9090` metrics port scales to zero.
+- **Public or team URL** — exactly one `public` or `team` port. Visitors wake the service through its Hostess URL, custom domain, or preview URL. Add as many `private` ports as you like (for example a metrics port).
+- **Private only** — no `public` or `team` port. Another service or job wakes it with `${name.url}`. **The first port listed is the one that wakes the service.** `nextjs` and `fastapi` use their usual default ports when you omit `ports:`; a private `custom` service declares the port it listens on under `ports:`.
+
+`nextjs` is public by default. `fastapi` and `custom` are private by default, and hence `min: 0` is the default choice.
 
 Managed `postgres` and `redis` services, and `custom` services with `persistence` or `retention: permanent`, run continuously on a fixed instance count — so a service that just woke up finds its database and its data ready.
+
+### Private API plus public UI
+
+Keep the API private and let both sides sleep; the UI wakes the API through `${api.url}`:
+
+```yaml title="hostess.yml"
+version: "1.0"
+
+services:
+  api:
+    type: fastapi
+    build:
+      source: ./backend
+    replicas:
+      min: 0
+      max: 2
+
+  ui:
+    type: nextjs
+    build:
+      source: ./web
+    depends_on: [api]
+    env:
+      API_URL: ${api.url}
+    replicas:
+      min: 0
+      max: 2
+```
 
 ### Call it from another service
 
@@ -145,12 +174,31 @@ Reach a scale-to-zero service with `${name.url}` and the call wakes it, exactly 
       API_BASE: ${api.url}   # wakes api if it is idle
 ```
 
-Use `${name.url}` rather than assembling the address from `${name.host}` and `${name.port}` — those name the service's own listening address and are for always-on services like `postgres` and `redis`.
+Use `${name.url}` whenever any environment may scale the target to zero. `${name.host}` and `${name.port}` name the service's own listening address and are for always-on services like `postgres` and `redis`.
+
+### Sleep in preview, stay warm in production
+
+Override `replicas` per environment so preview apps idle between reviews while production keeps a steady instance count. See [Environments](https://docs.hostess.sh/docs/environments) for more information.
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: nextjs
+    replicas:
+      min: 0
+      max: 2
+
+environments:
+  production:
+    services:
+      web:
+        replicas: 1
+```
 
 ### Custom domains, previews, and deploys
 
-- **Custom domains** wake an idle service exactly the way its Hostess URL does.
-- **Preview environments** use the same `min: 0` from your `hostess.yml`, so preview apps idle between reviews.
+- **Custom domains** wake an idle public or team service exactly the way its Hostess URL does.
+- **Preview environments** inherit service-level `min: 0`, or use a per-environment override as above.
 - **`visibility: team` services** still sign the visitor in first; the request wakes the service after that.
 - **Deploys stay strict.** Hostess marks a deployment successful only after the new version starts and reports healthy, so a broken build fails the deploy instead of idling at zero. Idle scale-down begins after that.
 
@@ -333,4 +381,4 @@ After deploying with autoscaling, monitor your service's behavior in Hostess Stu
 - `min: 0` scales on incoming request load instead — see [Scale to Zero While Idle](#scale-to-zero-while-idle)
 - `max` is always 1 or more
 - Setting `min` equal to `max` holds a steady instance count (same as fixed replicas)
-- Replica settings apply per-environment — you can scale to zero in preview and keep `min: 2` in production
+- Override `replicas` per environment with `environments.<env>.services.<name>.replicas`

@@ -1,6 +1,6 @@
 ---
 title: Environments
-description: Target production, preview, staging, and custom environments with the CLI and configure per-environment domains.
+description: Target any environment from the CLI and configure per-environment dials.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -14,6 +14,7 @@ Environments represent deployment targets such as `production`, `preview`, `stag
 | Field | Type | Description |
 |---|---|---|
 | `domains` | object | Custom domains per service for this environment. Keys are service names, values are arrays of domain strings. |
+| `services` | object | Per-service overrides for this environment. Each entry sets `replicas` for that service. |
 | `branches` | array | Branch patterns (exact names or globs like `release/*`) that route a Git push/PR to this environment. See [Git Integration](https://docs.hostess.sh/docs/git-integration). |
 | `ephemeral` | bool | Marks the environment as a short-lived preview target. Pull requests deploy here, each isolated from the others. |
 | `ttl` | string | Lifetime for ephemeral deployments (e.g. `24h`); abandoned previews are reaped after this. |
@@ -130,6 +131,35 @@ Domain rules:
 - Service-level `domains` applies only to production.
 - A domain can appear in only one environment.
 - Use custom domains for application services such as `nextjs`, `fastapi`, and `custom`.
+
+## Per-Environment Replicas
+
+Use `environments.<env>.services.<name>.replicas` when one environment should keep a steady instance count and another should sleep. The override replaces the service-level `replicas` for that environment only — the same idea as per-environment domains.
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: nextjs
+    build:
+      source: ./web
+    replicas:
+      min: 0
+      max: 2
+
+environments:
+  production:
+    services:
+      web:
+        replicas: 1
+```
+
+After the first deploy with a new override, confirm it took effect: production should hold a steady instance count (here, one), while preview keeps sleeping between visits. See [Configure Autoscaling](/guides/autoscaling) for scale-to-zero patterns.
+
+Replica override rules:
+
+- Keys under `environments.<env>.services` must match services declared in top-level `services:`.
+- Only the `replicas` key is allowed on each service override.
+- Omitting the override leaves the service-level `replicas` unchanged.
 
 ## Secrets
 

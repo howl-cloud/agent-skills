@@ -151,7 +151,7 @@ Load only the page(s) needed for the current task. Paths are relative to this sk
 - [Redis](references/documentation/service-types/redis.mdx): Deploy fully managed Redis instances on Hostess for caching, session storage, task queues, and real-time features.
 - [Custom](references/documentation/service-types/custom.mdx): Deploy any containerized application on Hostess using the custom service type — workers, proxies, ML models, and more.
 
-- [Environments](references/documentation/environments.mdx): Target production, preview, staging, and custom environments with the CLI and configure per-environment domains.
+- [Environments](references/documentation/environments.mdx): Target any environment from the CLI and configure per-environment dials.
 - [Service Visibility](references/documentation/service-visibility.mdx): Control who can reach each service.
 - [URL Routing](references/documentation/url-routing.mdx): How Hostess generates and routes URLs for your services.
 - [Custom Domains](references/documentation/custom-domains.mdx): Add custom domains to your services with automatic HTTPS via Let's Encrypt.
