@@ -529,12 +529,14 @@ services:
 
 #### Preset Reference
 
-| Preset | CPU | Memory | Storage (databases only) | Typical Use Case |
-|---|---|---|---|---|
-| `small` | 0.5 cores | 512Mi | 10Gi | Development, small apps |
-| `medium` | 1.0 cores | 1Gi | 20Gi | Production APIs, standard workloads |
-| `large` | 2.0 cores | 2Gi | 50Gi | High-traffic services |
-| `xlarge` | 4.0 cores | 4Gi | 100Gi | Large databases, ML workloads |
+| Preset | CPU request | CPU limit | Memory | Storage (databases only) | Typical Use Case |
+|---|---|---|---|---|---|
+| `small` | 0.1 cores | 0.5 cores | 512Mi | 10Gi | Development, small apps |
+| `medium` | 0.25 cores | 1.0 cores | 1Gi | 20Gi | Production APIs, standard workloads |
+| `large` | 0.5 cores | 2.0 cores | 2Gi | 50Gi | High-traffic services |
+| `xlarge` | 1.0 cores | 4.0 cores | 4Gi | 100Gi | Large databases, ML workloads |
+
+Presets are **burstable**: the CPU request is a quarter of the CPU limit, so a service reserves a fraction of a core on the node but may burst up to its limit. Memory request always equals memory limit, because memory cannot be reclaimed by throttling.
 
 If you omit `resources`, Hostess selects automatic workload-aware sizing based on service type. This is not a named preset — use `small`, `medium`, `large`, or `xlarge` when you want a fixed preset.
 
@@ -543,7 +545,7 @@ If you omit `resources`, Hostess selects automatic workload-aware sizing based o
 | Next.js / FastAPI | 0.1 cores | 256Mi | 1.0 cores | 1Gi |
 | Custom | 0.25 cores | 512Mi | 1.0 cores | 1Gi |
 | Jobs | 0.1 cores | 256Mi | 1.0 cores | 1Gi |
-| Postgres / Redis | 1.0 cores | 1Gi | 1.0 cores | 1Gi |
+| Postgres / Redis | 0.25 cores | 1Gi | 1.0 cores | 1Gi |
 
 For Postgres, Redis, and custom services with persistent storage, disk defaults to **20Gi** when storage is omitted.
 
@@ -583,6 +585,8 @@ services:
       memory: 4Gi
       storage: 100Gi
 ```
+
+`cpu` sets the CPU **limit**, and the request is derived the same way as presets: a quarter of the limit, with a floor of `0.1` cores. So `cpu: 4.0` above reserves 1 core and may burst to 4. `memory` sets request and limit together.
 
 </Tab>
 </Tabs>
