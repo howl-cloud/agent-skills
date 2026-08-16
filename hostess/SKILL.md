@@ -147,6 +147,7 @@ Load only the page(s) needed for the current task. Paths are relative to this sk
 
 - [Next.js](references/documentation/service-types/nextjs.mdx): Deploy Next.js applications with automatic build optimization, server-side rendering, and API routes on Hostess.
 - [FastAPI](references/documentation/service-types/fastapi.mdx): Deploy FastAPI applications with automatic health checks, database migrations, and background workers on Hostess.
+- [Static](references/documentation/service-types/static.mdx): Deploy Vite, Astro, Docusaurus, and HTML sites as an HTTP file server on Hostess.
 - [PostgreSQL](references/documentation/service-types/postgres.mdx): Deploy fully managed PostgreSQL databases on Hostess with automatic backups, connection management, and scoped databases.
 - [Redis](references/documentation/service-types/redis.mdx): Deploy fully managed Redis instances on Hostess for caching, session storage, task queues, and real-time features.
 - [Custom](references/documentation/service-types/custom.mdx): Deploy any containerized application on Hostess using the custom service type — workers, proxies, ML models, and more.

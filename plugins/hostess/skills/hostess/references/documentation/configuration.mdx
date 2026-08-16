@@ -75,7 +75,7 @@ Each service is keyed by a **name** (the YAML key under `services:`). Names must
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `type` | string | **Yes** | Service type (see [Service Types](#service-types)). One of `nextjs`, `fastapi`, `postgres`, `redis`, or `custom`. |
+| `type` | string | **Yes** | Service type (see [Service Types](#service-types)). One of `nextjs`, `fastapi`, `static`, `postgres`, `redis`, or `custom`. |
 | `build` | object | Conditional | Build from a Dockerfile. One of `build`, `image`, or `source` is required for non-database services. |
 | `image` | string | Conditional | Public container image URL (pullable without registry credentials). For private images, prefer building from your source instead. |
 | `source` | string | Conditional | Zero-config build path — no Dockerfile. Hostess auto-detects your language/framework and builds it. Mutually exclusive with `build` and `image`. |
@@ -88,7 +88,7 @@ Each service is keyed by a **name** (the YAML key under `services:`). Names must
 | `visibility` | string | No | Who can reach the service: `public`, `team`, or `private`. See [Visibility](#visibility). |
 | `ports` | array | No | Ports to expose. Defaults depend on service type. Optional per-port `visibility`. |
 | `resources` | string or object | No | Resource allocation. Defaults to automatic workload-aware sizing (see [Resources](#resources)). |
-| `replicas` | number or object | No | Replica count or autoscaling config. Defaults to `1`. |
+| `replicas` | number or object | No | Replica count or autoscaling config. Defaults to `1`, or `{ min: 0, max: 1 }` for `static`. |
 | `health` | object | No | Health check configuration. Defaults depend on service type. |
 | `retention` | string | No | Data retention policy: `permanent` or `ephemeral`. For `postgres`, `redis`, and stateful `custom` services. |
 | `persistence` | bool, object, or array | No | Durable custom-service mounts. Custom services only. |
@@ -105,7 +105,7 @@ Each service is keyed by a **name** (the YAML key under `services:`). Names must
 The `type` field tells Hostess what kind of service you are running. This enables smart defaults for ports, health checks, resource allocation, and more.
 
 ```yaml
-type: nextjs | fastapi | postgres | redis | custom
+type: nextjs | fastapi | static | postgres | redis | custom
 ```
 
 #### Supported Types
@@ -114,6 +114,7 @@ type: nextjs | fastapi | postgres | redis | custom
 |---|---|---|---|---|
 | `nextjs` | Web Framework | `3000` | `GET /` | Next.js (React) applications |
 | `fastapi` | Web Framework | `8000` | `GET /health` | FastAPI (Python) applications |
+| `static` | File server | `8080` | `GET /` | Vite, Astro, Docusaurus, and HTML directories |
 | `postgres` | Database | `5432` | `pg_isready` | Managed PostgreSQL database |
 | `redis` | Database | `6379` | `redis-cli ping` | Managed Redis instance |
 | `custom` | Generic | None | None | Any containerized application |
@@ -123,6 +124,8 @@ The `type` field is **required**. Hostess applies sensible defaults per type so 
 </Callout>
 
 **Web framework types** (`nextjs`, `fastapi`) require one of `build`, `image`, or `source` to be specified. They produce container deployments that receive HTTP traffic.
+
+**Static** (`static`) uses `source:`. Hostess Native Build produces an HTTP file server from that directory.
 
 **Database types** (`postgres`, `redis`) are fully managed by Hostess. You do not need to provide `build` or `image` — Hostess provisions the database automatically. Database services support `resources`, `retention`, `backups`, and `databases` (scoped databases) fields.
 
@@ -335,7 +338,7 @@ jobs:
 #### Behavior
 
 - **Startup order** — Dependent services are rolled out after their dependencies in the graph.
-- **Waiting** — For **HTTP** services (for example `nextjs` / `fastapi` / `custom` with an HTTP health check), Hostess waits until the configured HTTP health path responds. For **Postgres** and **Redis**, it waits until the dependency **accepts connections** on the database port.
+- **Waiting** — For **HTTP** services (for example `nextjs` / `fastapi` / `static` / `custom` with an HTTP health check), Hostess waits until the configured HTTP health path responds. For **Postgres** and **Redis**, it waits until the dependency **accepts connections** on the database port.
 - **Job gates** — A service can depend on a top-level job with `condition: completed`, so migrations or setup jobs finish before the service starts.
 - **Magic variables** — Values like `${database.url}` are resolved from the stack configuration; list dependencies in `depends_on` when you need strict ordering relative to those services.
 - **Deployment order** — Dependencies must form a **directed acyclic graph** (no cycles).
@@ -441,7 +444,7 @@ The `visibility` field controls who can open a service’s HTTPS URL:
 | `team` | Yes | Organization members after Hostess sign-in |
 | `private` | No | Other services via magic variables; local access with `hostess connect` |
 
-Defaults: `nextjs` → `public`; other types → `private`. Set `visibility: team` explicitly when you want a sign-in–gated URL.
+Defaults: `nextjs` and `static` → `public`; other types → `private`. Set `visibility: team` explicitly when you want a sign-in–gated URL.
 
 ```yaml title="hostess.yml"
 services:
@@ -642,13 +645,13 @@ Hostess manages stabilization windows and cooldown periods internally to prevent
 </Tabs>
 
 <Callout type="info">
-If you do not specify `replicas`, it defaults to `1`. With `min` at 1 or more, scaling follows CPU utilization; with `min: 0` it follows incoming request load — see [Configure Autoscaling](/guides/autoscaling).
+If you do not specify `replicas`, it defaults to `1` (`static` defaults to `{ min: 0, max: 1 }`). With `min` at 1 or more, scaling follows CPU utilization; with `min: 0` it follows incoming request load — see [Configure Autoscaling](/guides/autoscaling).
 </Callout>
 
 #### Validation
 
 - Fixed replica count must be at least **1**.
-- Autoscaling `min` can be **0** for eligible `nextjs`, `fastapi`, and `custom` services — see [Configure Autoscaling](/guides/autoscaling).
+- Autoscaling `min` can be **0** for eligible `nextjs`, `fastapi`, `static`, and `custom` services — see [Configure Autoscaling](/guides/autoscaling).
 - Autoscaling `max` must be at least **1** and greater than or equal to `min`.
 
 ---

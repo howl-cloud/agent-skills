@@ -20,7 +20,7 @@ This guide covers how to configure autoscaling in `hostess.yml`, how to let an i
 | **Autoscaling** | `replicas: { min: 2, max: 10, target_cpu: 70 }` | Variable traffic, APIs, web frontends, anything with unpredictable load |
 | **Scale to zero** | `replicas: { min: 0, max: 3 }` | Side projects, demos, docs and preview apps that sit idle between visits |
 
-**Default behavior**: If you don't specify `replicas` at all, Hostess runs **1 replica** with no autoscaling.
+**Default behavior**: If you don't specify `replicas` at all, Hostess runs **1 replica** with no autoscaling. `type: static` defaults to `{ min: 0, max: 1 }` and sleeps when idle.
 
 ---
 
@@ -127,12 +127,12 @@ Only the first request after an idle stretch waits. Every request after it is se
 
 ### Which services can scale to zero
 
-`nextjs`, `fastapi`, and `custom` services without persistent storage can set `min: 0` in either of these shapes:
+`nextjs`, `fastapi`, `static`, and `custom` services without persistent storage can set `min: 0` in either of these shapes:
 
 - **Public or team URL** — exactly one `public` or `team` port. Visitors wake the service through its Hostess URL, custom domain, or preview URL. Add as many `private` ports as you like (for example a metrics port).
-- **Private only** — no `public` or `team` port. Another service or job wakes it with `${name.url}`. **The first port listed is the one that wakes the service.** `nextjs` and `fastapi` use their usual default ports when you omit `ports:`; a private `custom` service declares the port it listens on under `ports:`.
+- **Private only** — no `public` or `team` port. Another service or job wakes it with `${name.url}`. **The first port listed is the one that wakes the service.** `nextjs`, `fastapi`, and `static` use their usual default ports when you omit `ports:`; a private `custom` service declares the port it listens on under `ports:`.
 
-`nextjs` is public by default. `fastapi` and `custom` are private by default, and hence `min: 0` is the default choice.
+`nextjs` and `static` are public by default. `fastapi` and `custom` are private by default, and hence `min: 0` is the default choice for those. `type: static` already sleeps by default.
 
 Managed `postgres` and `redis` services, and `custom` services with `persistence` or `retention: permanent`, run continuously on a fixed instance count — so a service that just woke up finds its database and its data ready.
 
@@ -253,6 +253,10 @@ services:
 - **min: 2** — Redundancy for zero-downtime deploys
 - **max: 20** — Higher ceiling for traffic spikes (frontend replicas are lightweight)
 - **target_cpu: 60** — Lower target to scale up earlier since SSR can be CPU-intensive
+
+### Static file servers
+
+`type: static` already defaults to `{ min: 0, max: 1 }` and sleeps when idle. Pin a warm replica in any environment with `environments.<env>.services.<name>.replicas: 1`. See [Static](https://docs.hostess.sh/docs/service-types/static).
 
 ### Background workers
 

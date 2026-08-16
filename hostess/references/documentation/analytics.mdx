@@ -19,6 +19,9 @@ Beacons are sent **same-origin** to `/_hostess/rum` on your app's own domain —
 
 ## Setup
 
+<Tabs items={["Next.js", "Static"]}>
+<Tab value="Next.js">
+
 Install the helper (the same package that powers server-side Insights):
 
 ```bash
@@ -44,6 +47,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ```
 
 Use one or both — `<Analytics />` powers the **Analytics** tab, `<SpeedInsights />` powers the **Speed Insights** tab. Both work with the App Router and the Pages Router (in the Pages Router, add them to `pages/_app.tsx`).
+
+</Tab>
+<Tab value="Static">
+
+On a `type: static` service, install the browser SDK and call it once from the app entry:
+
+```bash
+npm install @hostess/browser
+```
+
+```ts title="src/main.js"
+import { inject, injectSpeedInsights } from "@hostess/browser";
+
+inject();
+injectSpeedInsights();
+```
+
+`inject()` powers the **Analytics** tab; `injectSpeedInsights()` powers **Speed Insights**.
+
+</Tab>
+</Tabs>
 
 <Callout type="info">
 The components send nothing when `NODE_ENV` is `development` — your local dev sessions never pollute production analytics. They also send nothing when the app isn't running on Hostess, so the same code is safe in forks, previews, and CI.
@@ -91,6 +115,6 @@ On the platform side, beacons land on Hostess's ingest service, which attributes
 
 ## Limits and notes
 
-- Web Analytics is available for **Next.js services** today via `@hostess/nextjs`. The underlying `@hostess/browser` package is framework-agnostic; more framework helpers are planned.
+- Web Analytics is available for **Next.js** via `@hostess/nextjs` and **static** services via `@hostess/browser`.
 - Beacons only flow for apps served through Hostess URLs (including [custom domains](https://docs.hostess.sh/docs/custom-domains)).
 - Data appears within seconds for Analytics; Speed Insights charts need a few minutes of samples after first enablement.

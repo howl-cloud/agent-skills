@@ -1,0 +1,208 @@
+---
+title: Static
+description: Deploy Vite, Astro, Docusaurus, and HTML sites as an HTTP file server on Hostess.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+## Overview
+
+`type: static` is an HTTP file server. Vite, Astro, Docusaurus, and a directory of HTML share this type because they share a runtime.
+
+<Tabs items={["Vite app", "HTML directory"]}>
+<Tab value="Vite app">
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: static
+    source: ./web
+    special:
+      spa: true
+    env:
+      VITE_API_URL: ${api.external_url}
+```
+
+</Tab>
+<Tab value="HTML directory">
+
+```yaml title="hostess.yml"
+services:
+  artifact:
+    type: static
+    source: ./artifact
+```
+
+Put `index.html` in that directory. Hostess serves the files as-is.
+
+</Tab>
+</Tabs>
+
+Then run `hostess deploy`.
+
+### Defaults
+
+| Setting | Default Value |
+|---|---|
+| Visibility | `public` |
+| Port | `8080` |
+| Health check | `GET /` |
+| Replicas | `{ min: 0, max: 1 }` |
+
+---
+
+## Source
+
+A static service uses `source:` — the path to the application files:
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: static
+    source: ./web
+```
+
+To deploy a Dockerfile, use [`type: custom`](https://docs.hostess.sh/docs/service-types/custom).
+
+---
+
+## Native Build
+
+Hostess converts Source into the files it serves:
+
+| Source | What Hostess does |
+|---|---|
+| Has `package.json` | Installs dependencies, runs the `build` script (or `special.build_command`), and serves `special.output` (default `dist`) |
+| No `package.json` | Serves the Source files themselves (`output` default `.`) |
+
+Give a Node app a `build` script, or set `special.build_command`.
+
+---
+
+## Special
+
+Type-specific options live under `special`:
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: static
+    source: ./web
+    special:
+      output: dist
+      spa: true
+      build_command: vite build
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `output` | `dist` after a Node build; `.` for copy-only | Directory of files to serve |
+| `spa` | `false` | Last rewrite to `index.html` when no file matches. See [SPA Mode](#spa-mode) |
+| `build_command` | the `package.json` `build` script | Command Hostess runs instead of `build` |
+
+---
+
+## Environment Variables
+
+On a Node app, `env` is baked in at build time — the same way Vite inlines `VITE_*` values:
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: static
+    source: ./web
+    env:
+      VITE_API_URL: ${api.external_url}
+```
+
+Call `${api.external_url}` from the browser (enable CORS on the API). For a directory of HTML that needs an API URL, use a Vite-style app, or hardcode a public URL in the page.
+
+---
+
+## Serving Conventions
+
+Add these files to the directory Hostess serves:
+
+| File | Role |
+|---|---|
+| `404.html` | Page shown when nothing else matched |
+| `_redirects` | Rewrites and redirects |
+| `_headers` | Extra response headers |
+
+On Vite, put them in `public/` so they land in `dist/`. On a copy-only site, put them next to `index.html`.
+
+`_redirects` uses Netlify-shaped rules — rewrite or redirect to another path in the served files, or send the browser to an absolute URL:
+
+```txt title="_redirects"
+# comments
+/old  /new  301
+/about  /about.html  200
+/docs/*  /docs/:splat  200
+/gone  https://example.com/gone  302
+```
+
+`_headers` uses path blocks:
+
+```txt title="_headers"
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+```
+
+Hostess already sets cache and security headers; `_headers` adds or overrides them.
+
+---
+
+## SPA Mode
+
+Set `special.spa: true` so unmatched paths serve `index.html` with 200 — the usual client-router pattern. It is the last rewrite: a real file or a matching `_redirects` rule wins first.
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: static
+    source: ./web
+    special:
+      spa: true
+```
+
+---
+
+## Audience Analytics and Speed Insights
+
+Install `@hostess/browser` and call it once from the app entry (Vite: `src/main.js`):
+
+```bash
+npm install @hostess/browser
+```
+
+```ts title="src/main.js"
+import { inject, injectSpeedInsights } from "@hostess/browser";
+
+inject();
+injectSpeedInsights();
+```
+
+Data appears on the service's **Analytics** and **Speed Insights** tabs in Studio. See [Web Analytics](https://docs.hostess.sh/docs/analytics) for what is collected.
+
+---
+
+## Sleep
+
+A static service defaults to `{ min: 0, max: 1 }`. After idle it scales to zero; the next request wakes it. That is the default in every environment.
+
+Keep a replica warm with a per-environment override:
+
+```yaml title="hostess.yml"
+services:
+  web:
+    type: static
+    source: ./web
+
+environments:
+  production:
+    services:
+      web:
+        replicas: 1
+```
+
+See [Configure Autoscaling](/guides/autoscaling) for scale-to-zero and replica overrides.

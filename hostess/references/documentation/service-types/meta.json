@@ -3,6 +3,7 @@
   "pages": [
     "nextjs",
     "fastapi",
+    "static",
     "postgres",
     "redis",
     "custom"
