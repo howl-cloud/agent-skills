@@ -9,7 +9,7 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 `type: static` is an HTTP file server. Vite, Astro, Docusaurus, and a directory of HTML share this type because they share a runtime.
 
-<Tabs items={["Vite app", "HTML directory"]}>
+<Tabs items={["Vite app", "HTML directory", "HTML file"]}>
 <Tab value="Vite app">
 
 ```yaml title="hostess.yml"
@@ -36,6 +36,18 @@ services:
 Put `index.html` in that directory. Hostess serves the files as-is.
 
 </Tab>
+<Tab value="HTML file">
+
+```yaml title="hostess.yml"
+services:
+  page:
+    type: static
+    source: ./page.html
+```
+
+Hostess serves that page at the service URL.
+
+</Tab>
 </Tabs>
 
 Then run `hostess deploy`.
@@ -53,7 +65,7 @@ Then run `hostess deploy`.
 
 ## Source
 
-A static service uses `source:` — the path to the application files:
+A static service uses `source:` — a directory of application files, or a single `.html`/`.htm` file served at `/`.
 
 ```yaml title="hostess.yml"
 services:
@@ -72,6 +84,7 @@ Hostess converts Source into the files it serves:
 
 | Source | What Hostess does |
 |---|---|
+| A `.html`/`.htm` file | Serves that page at `/` as `index.html` |
 | Has `package.json` | Installs dependencies, runs the `build` script (or `special.build_command`), and serves `special.output` (default `dist`) |
 | No `package.json` | Serves the Source files themselves (`output` default `.`) |
 
