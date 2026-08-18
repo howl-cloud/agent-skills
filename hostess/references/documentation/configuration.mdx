@@ -259,6 +259,44 @@ image: registry.example.com/team/service:v2.0.0
 </Tab>
 </Tabs>
 
+### Source Uploads
+
+When you run `hostess deploy`, Hostess uses the ignore rules to select the project files to upload. Hostess builds each service from its `source:` or `build.source` path.
+
+Use **`.gitignore`** for files that Git must ignore. Hostess uses the root `.gitignore` file and all nested `.gitignore` files.
+
+Use a root **`.hostessignore`** file for files that only Hostess must ignore. Put this file next to `hostess.yml`. If `.hostessignore` does not exist, Hostess uses `.dockerignore`.
+
+Specify the build path with **`source:`** or **`build.source`**. Hostess includes this path if `.gitignore` or `.dockerignore` excludes it.
+
+Hostess does not upload `.git`, `.env`, or `.env.*`. Hostess uploads `.env.example`, `.env.sample`, `.env.template`, and names with these suffixes. For example, Hostess uploads `.env.production.example`.
+
+Do not exclude a required source path or Dockerfile in `.hostessignore`. The same restriction applies to `.git`, `.env`, and `.env.*`. If a rule excludes a required file, `hostess deploy` stops before the upload. The error identifies the path and the rule.
+
+Hostess uploads symbolic links that point to files in the project.
+
+A source upload has these limits:
+
+- **500 MiB** compressed size
+- **2 GiB** expanded size
+- **100,000** files
+- **1 GiB** for each file
+
+```bash title=".hostessignore"
+# Files that Hostess does not upload
+docs
+.github
+scripts/local
+
+# Upload the OpenAPI specification
+!docs/openapi.json
+
+# Local files
+.idea
+.vscode
+*.log
+```
+
 ---
 
 ### Environment Variables
